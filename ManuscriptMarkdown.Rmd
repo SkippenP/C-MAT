@@ -1,0 +1,580 @@
+---
+title             : "Cross frequency coupling of attentional EEG task under pain"
+shorttitle        : "Cross Pain"
+author: 
+  - name          : "Patrick Skippen"
+    affiliation   : "1"
+    corresponding : yes    # Define only one corresponding author
+    address       : "Neuroscience Research Australia, Barker St, Randwick, Australia"
+    email         : "p.skippen@neura.edu.au"
+  - name          : "David Seminowicz"
+    affiliation   : "1"
+  - name          : "Ali Mazaheri"
+    affiliation   : "2"
+  - name          : "Samantha Mallard"
+    affiliation   : "1"
+  - name          : "Siobhan Schabrun"
+    affiliation   : "1"
+affiliation:
+  - id            : "1"
+    institution   : "Neuroscience Research Australia, Randwick Australia"
+  - id            : "2"
+    institution   : "Where-ever Ali is, Country"
+author_note: |
+  
+  
+  
+  Author's  contributions: DS and AM conceptualised the research plan and rationale. PS took the lead role in manuscript preparation, formulated the analysis plan, and undertook majority of the data analysis. SS xyz.
+  The data and code used to create this manuscript can be found at https://osf.io/XXXX/
+  This is version 1: 02/2020
+abstract: |
+  blah blah.
+  
+keywords          : ""
+bibliography      : "r-references.bib"
+figsintext        : yes
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+lineno            : no
+draft             : no
+lang              : "english"
+class             : "man"
+output            :
+  papaja::apa6_pdf:
+    latex_engine: xelatex
+header-includes: #allows you to add in your own Latex packages
+- \usepackage{float} #use the 'float' package
+- \usepackage{caption}
+- \floatplacement{figure}{H} #make every figure with caption = h
+- \raggedbottom
+- \usepackage{pdflscape}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+editor_options: 
+  chunk_output_type: console
+---
+
+\setlength{\abovedisplayskip}{-20pt}
+\setlength{\belowdisplayskip}{3pt}
+\setlength{\abovedisplayshortskip}{-30pt}
+\setlength{\belowdisplayshortskip}{3pt}
+
+```{r Packages and Libraries, message = FALSE, warning = FALSE, echo = FALSE}
+# installs packages if necessary - MUST locate packages before knitting
+.libPaths("./Packages")
+Packages <- c("ggplot2","dplyr","reshape",#"wesanderson",
+              "BayesFactor",
+              "kableExtra","rmatio","Rmisc",
+              "rmarkdown","data.table","devtools") # Slew of packages used here.
+
+# # Install CRAN packages, if necessary
+if(sum(!Packages %in% rownames(installed.packages()))>=1){
+invisible(lapply(Packages,install.packages,dependencies=TRUE))
+}
+
+# Library Packags
+invisible(lapply(Packages,library,character.only=TRUE))
+
+## Standard error function
+stderr <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
+}
+## Formatting Number Function for tables and output
+numformat <- function(x, digits = 2) { 
+    ncode <- paste0("%.", digits, "f")
+    sub("^(-?)0.", "\\1.", sprintf(ncode, x))
+}
+
+# Install Git Packages, if necessary
+if(!"papaja" %in% rownames(installed.packages())) devtools::install_github("crsh/papaja")
+# if(!"wordcountaddin" %in% rownames(installed.packages())) devtools::install_github("benmarwick/wordcountaddin", type = "source", dependencies = TRUE)
+
+# References info
+papaja::r_refs(file = "r-references.bib")
+
+# Knitting options
+knitr::opts_chunk$set(comment = NA)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.pos= "h")
+```
+
+# 1. Introduction
+
+# 2. Methods
+```{r Methods Set-up, echo=FALSE}
+Subjidx <- dir("../Data/")
+# Participant "CLP130" has a few problems. Including odd trigger codes. We'll rid ourselves of this participant for now.
+Subjidx <- Subjidx[-30]
+
+Conditions <- c("np","p")
+source('Functions/ExtractRT_MATLAB.R')
+
+## Below code only runs the first time. If Output/Trial_list exsits it will simply load the data.
+if(!file.exists("Output/Trial_list.RData")){
+Trial.list <- list()
+## Extract Trial.list
+for(px in seq_along(Subjidx)){
+  Trial.list[["np"]][[px]] <- ExtractTrialData(PartID = Subjidx[px],COND = "np")
+  
+}
+names(Trial.list[["np"]]) <- Subjidx
+
+# N.B - CLP116 is missing pain data
+Subjidx_p <- Subjidx[-16]
+for (px in seq_along(Subjidx)) {
+  if (file.exists(paste(
+    "../Data/",
+    Subjidx[px],
+    "/Behaviour/",
+    paste(Subjidx[px], "p", sep = "_"),
+    "_EventCodes.mat",
+    sep = ""
+  ))) {
+    Trial.list[["p"]][[px]] <-
+      ExtractTrialData(PartID = Subjidx[px], COND = "p")
+  }
+  else {
+    Trial.list[["p"]][[px]] <- NA
+  }
+}
+names(Trial.list[["p"]]) <- Subjidx
+
+## Remove CLP116 pain data
+Trial.list[["p"]][is.na(Trial.list[["p"]])] <- NULL
+
+save(Trial.list,file = "Output/Trial_list.RData")
+
+Trialdata <- rbind(data.table::rbindlist(Trial.list$np),
+                 data.table::rbindlist(Trial.list$p))
+write.csv(Trialdata,file = "Output/TrialData.csv",
+          row.names = F)
+}
+
+## Load data
+tmp = load("Output/Trial_list.RData")
+Trialdata <- read.csv("Output/TrialData.csv")
+Subjidx <- unique(Trialdata$PartID)
+## Some extreme CTI and ITI values were found. See plots
+# hist(Trialdata$CTI)
+# hist(Trialdata$ITI)
+# Participants 101,102,107 are clear outliers and appear to have some extra long CTIs
+
+## Calculate summary variables and store in data frame
+source('Functions/MethodsList.R')
+Summdata <- MethodsList(Trialdata)
+```
+
+## 2.1. Participants
+  A total of `r length(unique(Summdata$PartID))` participants were recruited for the study. They were recruited from *Insert here* and ranged in age from *X-Xyrs (X% Female)*. The study confirmed to ethics approved by *Ethics board of study*.  
+
+## 2.2. Procedure
+
+### 2.2.X. Cross-modal Attention task
+
+The Cross-modal Attention task requires participants to respond to either the position of a visual target or the pitch of an auditory target. Targets can appear simultaneously and so participants are presented with a cue to indicate the correct target in the upcoming trial. This version of the task consisted of three types of cues. Cues consisted of *Insert what cues looked like* presented on screen for *How long were cues presented?*. Cue *one* indicated the participant should respond to the position of the visual target. Cue *two* indicated that participants should respond to the pitch of the auditory target. These two cues occurred on `r round((1-(table(Trialdata$CueType)[[1]]/sum(table(Trialdata$CueType))))/2,1)*100`% of trials each. On the remaining `r round((table(Trialdata$CueType)[[1]]/sum(table(Trialdata$CueType))),1)*100`% of trials, participants received an ambiguous cue, which gave no information about the upcoming target. On these trials only one target was presented. Equal ratios of auditory and visual targets followed ambiguous cues (*I'm guessing this is true?*).
+
+  Cues were displayed for 250ms and targets for 60ms [*Please confirm this is correct. Trigger codes did not specify exactly*]. The cue to target interval (CIT) jittered between `r round(min(Trialdata$CTI,na.rm=T),0)`-`r round(max(Trialdata$CTI,na.rm=T),0)` in steps of **XXX** (*Values for this change with participants. Some have maxes of ~800ms and min of ~700ms. Others (N = 3) have max ~1500 and min ~1400*). Each trial lasted approximately `r round(mean(Trialdata %>% group_by(PartID) %>% summarise(meanITI = mean(ITI,na.rm=T)) %>% .$meanITI),0)`, with a jitter of **XXX** (*Again, same three participants throw this estimate out*).  
+  
+# 3. Results  
+```{r Results Set-up, echo=FALSE}
+## Create plots to observe possible outliers, effects, interactions etc
+
+## Colour-blind friendly pallatte
+cbbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7","#000000")
+
+## We will plot four main comparisons on RT:
+# Modality (Auditory vs Visual targets)
+# Preparation (Cued-targets vs Ambiguous Target)
+# Interference/Distraction (Prescence vs Abscence of Targets)
+# Pain (Pain vs No-Pain conditions) - which will be compared across all of the above.
+if(!file.exists("Output/RT_Boxplots.pdf")){
+  source("Functions/RT_Plots.R")
+}
+tmp =load(file = "Output/RT_Plots.RData")
+
+#### Error Rates Calclations ####
+
+# Create list of error rates splits of interest
+N_Trials <- list()
+N_Trials[["Condition"]] <- Trialdata %>% dplyr::group_by(PartID,Condition,Accuracy) %>%  dplyr::tally()
+
+N_Trials[["CueType"]] <- Trialdata %>% dplyr::group_by(PartID,CueType,Accuracy) %>%  dplyr::tally()
+
+N_Trials[["Distractor"]] <- Trialdata %>% dplyr::group_by(PartID,Distractor,Accuracy) %>%  dplyr::tally()
+
+N_Trials[["Target"]] <- Trialdata %>% dplyr::group_by(PartID,Target,Accuracy) %>% dplyr::tally()
+
+source('Functions/ErrRates.R')
+
+Errors_list <- list()
+for (i in seq_along(names(N_Trials))) {
+  Errors_list[[names(N_Trials)[[i]]]] <- ErrRates(
+    list = N_Trials,
+    sublist = names(N_Trials)[[i]],
+    sublist_levels = unique(N_Trials[[names(N_Trials)[[i]]]][[names(N_Trials)[[i]]]]),
+    subj = Subjidx
+  )
+}
+
+## Build Errors data.frame ##
+Errorsdata <-
+  data.frame(lapply(names(Errors_list), function(x)
+    data.frame(Errors_list[[x]][["Errors"]])))
+# Turns the length = 0 lists into NA and creates data.frame
+for (i in names(Errorsdata)){
+      Errorsdata[[i]] <- unlist(ifelse(sapply(Errorsdata[[i]], length) == 0, NA, Errorsdata[[i]]))
+}
+names(Errorsdata) <- c("NoPain","Pain",
+                       "AmbiguousCue","AuditoryCue","VisualCue",
+                       "DistractorAbsent","DistractorPresent",
+                       "AuditoryTarget","VisualTarget")
+# Build Misses data frame #
+Missdata   <-
+  data.frame(lapply(names(Errors_list), function(x)
+    data.frame(Errors_list[[x]][["Ommissions"]])))
+
+# Turns the length = 0 lists into NA and creates data.frame
+for (i in names(Missdata)){
+      Missdata[[i]] <- unlist(ifelse(sapply(Missdata[[i]], length) == 0, NA, Missdata[[i]]))
+}
+names(Missdata) <- c("NoPain","Pain",
+                       "AmbiguousCue","AuditoryCue","VisualCue",
+                       "DistractorAbsent","DistractorPresent",
+                       "AuditoryTarget","VisualTarget")
+# Clean as we go
+rm(Errors_list)
+
+## Create SPSS/JASP ready dataframe
+# RT column with one column for each interaction of variables
+SPSSdata <-
+  reshape2::dcast(
+    data = Trialdata %>% dplyr::filter(Accuracy != "Miss"),
+    formula = PartID ~ Condition + CueType + Target + Distractor + Accuracy,
+    fun.aggregate = mean,
+    value.var = "RT"
+  )
+# Write to file
+write.csv(SPSSdata, file = "Output/SPSSdata.csv",
+          row.names = F)
+
+# Error rates
+# Write to file
+SPSSdata <-
+  reshape2::dcast(
+    data = Errorsdata,
+    formula = PartID ~ Condition + CueType + Target + Distractor,
+    fun.aggregate = mean,
+    value.var = "ErrorRates"
+  )
+write.csv(SPSSdata, file = "Output/Error_SPSSdata.csv",
+          row.names = F)
+
+write.csv(Errorsdata, file = "Output/Errors_data.csv",
+          row.names = F)
+# Ommissions rates
+# Write to file
+SPSSdata <-
+  reshape2::dcast(
+    data = Errorsdata,
+    formula = PartID ~ Condition + CueType + Target + Distractor,
+    fun.aggregate = mean,
+    value.var = "MissRates"
+  )
+write.csv(SPSSdata, file = "Output/Miss_SPSSdata.csv",
+          row.names = F)
+
+write.csv(Missdata, file = "Output/Miss_data.csv",
+          row.names = F)
+```
+## 3.1. Behavioural Results
+```{r Table 1, echo=FALSE}
+T1mean <- list()
+# Mean RT
+T1mean[["All"]] <-
+  aggregate(RT ~ PartID + Condition + CueType + Target + Distractor + Accuracy,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["Modality"]] <- aggregate(RT ~ PartID + Target,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["Preparation"]] <- aggregate(RT ~ PartID + CueType,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["PrepTarget"]] <- aggregate(RT ~ PartID + CueType + Target,
+                                 data = Trialdata,
+                                 FUN = mean)
+T1mean[["Distraction"]] <- aggregate(RT ~ PartID + Distractor,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["DistractionTarget"]] <-
+  aggregate(RT ~ PartID + Distractor + Target,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["Condition"]] <- aggregate(RT ~ PartID + Condition,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["ConditionModality"]] <- aggregate(RT ~ PartID + Condition + Target,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["ConditionPreparation"]] <- aggregate(RT ~ PartID + Condition + CueType,
+            data = Trialdata,
+            FUN = mean)
+T1mean[["ConditionDistraction"]] <- aggregate(RT ~ PartID + Condition + Distractor,
+            data = Trialdata,
+            FUN = mean)
+
+# Number of Trials for Error calcs
+NTrials <-
+  aggregate(TrialNum ~ PartID + Condition + CueType + Target + Distractor + Accuracy,
+            data = Trialdata,
+            FUN = length)
+names(NTrials)[length(NTrials)] <- "NTrials"
+# Create grouping variable to help calc percentages
+NTrials$levels <- interaction(NTrials$PartID,NTrials$Condition,NTrials$CueType,NTrials$Target,NTrials$Distractor,sep = ".")
+
+ErrorRates <- list()
+for (i in unique(NTrials$levels)) {
+  dummy <- ((NTrials$NTrials[NTrials$levels == i &
+                            NTrials$Accuracy == "Error"] / sum(NTrials$NTrials[NTrials$levels == i])) * 100)
+  
+  ErrorRates[["ErrorRates"]][[i]] <-
+    unlist(ifelse(length(dummy) == 0, NA, dummy))
+  
+  dummy2 <- (NTrials$NTrials[NTrials$levels == i &
+                            NTrials$Accuracy == "Miss"] / sum(NTrials$NTrials[NTrials$levels == i]) * 100)
+  
+  ErrorRates[["MissRates"]][[i]] <-
+    unlist(ifelse(length(dummy2) == 0, NA, dummy2))
+}
+rm(dummy,dummy2)
+
+Errorsdata <- data.frame(ErrorRates)
+Errorsdata$levels <- rownames(Errorsdata)
+foo <- do.call(rbind,strsplit(Errorsdata$levels,split = "[.]"))
+colnames(foo) <- names(T1mean$All)[1:ncol(foo)]
+Errorsdata <- cbind(foo,Errorsdata) %>% select(-levels)
+
+T1err <- list()
+T1err[["Modality"]] <- 
+  aggregate(ErrorRates ~ PartID + Target,
+            data = Errorsdata,
+            FUN = mean)
+T1err[["Preparation"]] <-
+  aggregate(ErrorRates ~ PartID + CueType, 
+            data = Errorsdata, 
+            FUN = mean)
+T1err[["PrepTarget"]] <- aggregate(ErrorRates ~ PartID + CueType + Target,
+                                 data = Errorsdata,
+                                 FUN = mean)
+T1err[["Distraction"]] <-
+  aggregate(ErrorRates ~ PartID + Distractor,
+            data = Errorsdata,
+            FUN = mean)
+T1err[["DistractionTarget"]] <-
+  aggregate(ErrorRates ~ PartID + Distractor + Target,
+            data = Errorsdata,
+            FUN = mean)
+T1err[["Condition"]] <- 
+  aggregate(ErrorRates ~ PartID + Condition,
+            data = Errorsdata,
+            FUN = mean)
+
+T1omm <- list()
+T1omm[["Modality"]] <- 
+  aggregate(MissRates ~ PartID + Target,
+            data = Errorsdata,
+            FUN = mean)
+T1omm[["Preparation"]] <-
+  aggregate(MissRates ~ PartID + CueType, 
+            data = Errorsdata, 
+            FUN = mean)
+T1omm[["Distraction"]] <-
+  aggregate(MissRates ~ PartID + Distractor,
+            data = Errorsdata,
+            FUN = mean)
+T1omm[["DistractionTarget"]] <-
+  aggregate(MissRates ~ PartID + Distractor + Target,
+            data = Errorsdata,
+            FUN = mean)
+T1omm[["PrepTarget"]] <- aggregate(MissRates ~ PartID + CueType + Target,
+                                 data = Errorsdata,
+                                 FUN = mean)
+T1omm[["Condition"]] <- 
+  aggregate(MissRates ~ PartID + Condition,
+            data = Errorsdata,
+            FUN = mean)
+```
+
+### 3.1.1. Modality Effects
+Visual targets (`r round(mean(T1mean$Modality$RT[T1mean$Modality$Target=="Visual"]),2)` ± `r round(stderr(T1mean$Modality$RT[T1mean$Modality$Target=="Visual"]),2)`) were identified faster than auditory targets (`r round(mean(T1mean$Modality$RT[T1mean$Modality$Target=="Auditory"]),2)` ± `r round(stderr(T1mean$Modality$RT[T1mean$Modality$Target=="Auditory"]),2)`). The percentage of errer trials was higher for auditory targets compared to visual targets. Visual targets were incorrectly responded to on `r round(mean(T1err$Modality$ErrorRates[T1err$Modality$Target=="Visual"]),2)` ± `r round(stderr(T1err$Modality$ErrorRates[T1err$Modality$Target=="Visual"]),2)`% trials, while auditory targets had an error rate of `r round(mean(T1err$Modality$ErrorRates[T1err$Modality$Target=="Auditory"]),2)` ± `r round(stderr(T1err$Modality$ErrorRates[T1err$Modality$Target=="Auditory"]),2)`%. Given the low error rates, RTs to error trials were not examined here (but see Figure 1). Omissions across each target type was low (Visual = `r round(mean(T1omm$Modality$MissRates[T1err$Modality$Target=="Visual"],na.rm=T),2)`%, Auditory = `r round(mean(T1omm$Modality$MissRates[T1err$Modality$Target=="Visual"],na.rm=T),2)`%).
+
+```{r Figureone, echo=FALSE, fig.cap = 'Violin plot of RT to visual and auditory targets. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean', message=FALSE}
+Plots$Modality$Accuracy
+```
+
+### 3.1.2. Preparatory Effects
+To examine the effect of preparation, reaction times of trials with informative cues were compared to trials with ambiguous cues. Correct trial RTs for auditory targets decreased from `r round(mean(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Ambiguous" & T1mean$PrepTarget$Target=="Auditory"]),2)` ± `r round(stderr(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Ambiguous" & T1mean$PrepTarget$Target=="Auditory"]),2)`ms for ambiguous cues to `r round(mean(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Auditory" & T1mean$PrepTarget$Target=="Auditory"]),2)` ± `r round(stderr(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Auditory" & T1mean$PrepTarget$Target=="Auditory"]),2)`ms for informative cues. For visual targets the average RT decreased from `r round(mean(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Ambiguous" & T1mean$PrepTarget$Target=="Visual"]),2)` ± `r round(stderr(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Ambiguous" & T1mean$PrepTarget$Target=="Visual"]),2)` ms for ambiguous cues to `r round(mean(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Visual" & T1mean$PrepTarget$Target=="Visual"]),2)` ± `r round(stderr(T1mean$PrepTarget$RT[T1mean$PrepTarget$CueType=="Visual" & T1mean$PrepTarget$Target=="Visual"]),2)` ms for informative cues. The faster identification of trials with an informative cue suggest that top-down processes facilitated target processing.  
+
+```{r Figuretwo, echo=FALSE, message=FALSE,fig.cap= 'Violin plot of RT to ambiguous and informatively cued targets, split by correct and erronous responses and target type. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.'}
+gridExtra::grid.arrange(Plots$Preparation$Accuracy,
+Plots$Preparation$Modality)
+```
+
+Cues had the opposite influence on task accuracy. Auditory targets were incorrectly responded to in `r round(mean(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Ambiguous" & T1err$PrepTarget$Target=="Auditory"]),2)` ± `r round(stderr(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Ambiguous" & T1err$PrepTarget$Target=="Auditory"]),2)`% of trials with an uninformative cue and in `r round(mean(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Auditory" & T1err$PrepTarget$Target=="Auditory"]),2)` ± `r round(stderr(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Auditory" & T1err$PrepTarget$Target=="Auditory"]),2)`% with an informative cue. However, visual targets showed little difference in error rates between trials with ambiguous cues (`r round(mean(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Ambiguous" & T1err$PrepTarget$Target=="Visual"]),2)` ± `r round(stderr(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Ambiguous" & T1err$PrepTarget$Target=="Visual"]),2)`%) and trials with informative cues (`r round(mean(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Visual" & T1err$PrepTarget$Target=="Visual"]),2)` ± `r round(stderr(T1err$PrepTarget$ErrorRates[T1err$PrepTarget$CueType=="Visual" & T1err$PrepTarget$Target=="Visual"]),2)`%). As noted above, there was a probable ceiling effect on performance. However, omission rates showed some considerable differences between targets based upon whether they were cued or not. Omissions occurred on `r round(mean(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Ambiguous" & T1omm$PrepTarget$Target == "Auditory"]), 2)` ± `r round(stderr(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Ambiguous" & T1omm$PrepTarget$Target == "Auditory"]), 2)`% of auditory trials with an ambiguous cue. In comparison, informatively cued auditory trials contained `r round(mean(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Auditory" & T1omm$PrepTarget$Target == "Auditory"]), 2)` ± `r round(stderr(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Auditory" & T1omm$PrepTarget$Target == "Auditory"]), 2)`% omissions. A similar effect is seen with visual targets. Ambiguously cued visual targets contained `r round(mean(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Ambiguous" & T1omm$PrepTarget$Target == "Visual"]), 2)` ± `r round(stderr(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Ambiguous" & T1omm$PrepTarget$Target == "Visual"]), 2)`% of omissions, while informatively cued trials contained `r round(mean(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Ambiguous" & T1omm$PrepTarget$Target == "Visual"]), 2)` ± `r round(stderr(T1omm$PrepTarget$MissRates[T1omm$PrepTarget$CueType == "Ambiguous" & T1omm$PrepTarget$Target == "Visual"]), 2)`% omission trials.
+
+### 3.1.3. Distraction Effects
+To test whether participants were disturbed by the presentation of distract ors in a different modality, RTs from trials containing distractors were compared to RTs from the distractor absent trials. Informatively cued Auditory trials without distractors had mean RT of `r round(mean(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Absent" & T1mean$DistractionTarget$Target == "Auditory"]), 2)` ± `r round(stderr(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Absent" & T1mean$DistractionTarget$Target == "Auditory"]), 2)`ms, while Auditory trials with distraction had mean RT of `r round(mean(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Present" & T1mean$DistractionTarget$Target == "Auditory"]), 2)` ± `r round(stderr(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Present" & T1mean$DistractionTarget$Target == "Auditory"]), 2)`ms. Similarly, Visual targets had slower RT when distractions were present (`r round(mean(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Present" & T1mean$DistractionTarget$Target == "Visual"]), 2)` ± `r round(stderr(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Present" & T1mean$DistractionTarget$Target == "Visual"]), 2)`ms) compared to without (`r round(mean(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Absent" & T1mean$DistractionTarget$Target == "Visual"]), 2)` ± `r round(stderr(T1mean$DistractionTarget$RT[T1mean$DistractionTarget$Distractor == "Absent" & T1mean$DistractionTarget$Target == "Visual"]), 2)`ms). Presentation of a distractor in a different modality is detrimental for task performance and a mechanism for active inhibition of distractors could be beneficial during this task.
+
+```{r Figurethree, echo=FALSE, message=FALSE, fig.cap= 'Violin plot of RT to targets with and without distraction, split by correct and erronous responses. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.'}
+gridExtra::grid.arrange(Plots$Distraction$Accuracy,
+Plots$Distraction$Modality)
+```
+
+### 3.1.4. Pain Effects
+The effect of pain on performance can be measured in a number of ways. Overall RT was relatively similar in the pain (`r round(mean(T1mean$Condition$RT[T1mean$Condition$Condition == "p"]), 2)` ± `r round(stderr(T1mean$Condition$RT[T1mean$Condition$Condition == "p"]), 2)`) vs no pain conditions (`r round(mean(T1mean$Condition$RT[T1mean$Condition$Condition == "np"]), 2)` ± `r round(stderr(T1mean$Condition$RT[T1mean$Condition$Condition == "np"]), 2)`). Likewise, overall error rates in the pain condition (`r round(mean(T1err$Condition$ErrorRates[T1err$Condition$Condition == "p"]), 2)` ± `r round(stderr(T1err$Condition$ErrorRates[T1err$Condition$Condition == "p"]), 2)`) were similar to the no pain condition (`r round(mean(T1err$Condition$ErrorRates[T1err$Condition$Condition == "np"]), 2)` ± `r round(stderr(T1err$Condition$ErrorRates[T1err$Condition$Condition == "np"]), 2)`). Omission rates were also found to be comparable across conditions (pain = `r round(mean(T1omm$Condition$MissRates[T1omm$Condition$Condition == "p"]), 2)` ± `r round(stderr(T1omm$Condition$MissRates[T1omm$Condition$Condition == "p"]), 2)`, no pain = `r round(mean(T1omm$Condition$MissRates[T1omm$Condition$Condition == "np"]), 2)` ± `r round(stderr(T1omm$Condition$MissRates[T1omm$Condition$Condition == "np"]), 2)`). Therefore an overall affect of condition on performance was not present. However, pain may influence specific effects of preparation and distraction.
+
+```{r Figurefour, echo=FALSE, message=FALSE,fig.cap= 'Violin plot of RT with and without pain, split by correct and erronous responses. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.'}
+Plots$Condition$Accuracy
+```
+
+### 3.1.5. Pain Interactions
+The RT benefit of visual targets was the same across pain (Auditory - Visual RT = `r round(mean(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Auditory"& T1mean$ConditionModality$Condition=="p"])-mean(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Visual" & T1mean$ConditionModality$Condition=="p"]),2)` ± `r round(stderr(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Auditory"& T1mean$ConditionModality$Condition=="p"])-stderr(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Visual" & T1mean$ConditionModality$Condition=="p"]),2)`) and no pain conditions (Auditory - Visual RT = `r round(mean(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Auditory"& T1mean$ConditionModality$Condition=="np"])-mean(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Visual" & T1mean$ConditionModality$Condition=="np"]),2)` ± `r round(stderr(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Auditory"& T1mean$ConditionModality$Condition=="np"])-stderr(T1mean$ConditionModality$RT[T1mean$ConditionModality$Target=="Visual" & T1mean$ConditionModality$Condition=="np"]),2)`).
+
+```{r Figurefive, echo=FALSE, message=FALSE,fig.cap= 'Violin plot of RT with and without pain, split by Target. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.'}
+Plots$Condition$Modality
+```
+
+In the pain condition, there was only a small improvement in preparation costs. Ambiguous cues were `r round(mean(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType == "Ambiguous" & T1mean$ConditionPreparation$Condition == "p"]) - mean(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType != "Ambiguous" & T1mean$ConditionPreparation$Condition == "p"]),2)` ± `r round(stderr(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType == "Ambiguous" & T1mean$ConditionPreparation$Condition == "p"]) - stderr(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType != "Ambiguous" & T1mean$ConditionPreparation$Condition == "p"]),2)`ms slower compared to informatively cued trials in the pain condition. However, this difference was  `r round(mean(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType == "Ambiguous" & T1mean$ConditionPreparation$Condition == "np"]) - mean(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType != "Ambiguous" & T1mean$ConditionPreparation$Condition == "np"]),2)` ± `r round(stderr(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType == "Ambiguous" & T1mean$ConditionPreparation$Condition == "np"]) - stderr(T1mean$ConditionPreparation$RT[T1mean$ConditionPreparation$CueType != "Ambiguous" & T1mean$ConditionPreparation$Condition == "np"]),2)`ms in the no pain condition.
+
+```{r Figuresix, echo=FALSE, fig.cap='Violin plot of RT with and without pain, split by cue type. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.', message=FALSE}
+Plots$Condition$Preparation
+```
+
+Distraction effects showed little differences between the pain condition (`r round(mean(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Present" & T1mean$ConditionDistraction$Condition == "p"]) - mean(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Absent" & T1mean$ConditionDistraction$Condition == "p"]),2)` ± `r round(mean(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Present" & T1mean$ConditionDistraction$Condition == "p"]) - stderr(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Absent" & T1mean$ConditionDistraction$Condition == "p"]),2)`) and no pain conditions (`r round(mean(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Present" & T1mean$ConditionDistraction$Condition == "np"]) - stderr(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Absent" & T1mean$ConditionDistraction$Condition == "np"]),2)` ± `r round(mean(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Present" & T1mean$ConditionDistraction$Condition == "np"]) - stderr(T1mean$ConditionDistraction$RT[T1mean$ConditionDistraction$Distractor == "Absent" & T1mean$ConditionDistraction$Condition == "np"]),2)`).
+
+```{r Figureseven, echo=FALSE, message=FALSE,fig.cap= 'Violin plot of RT with and without pain, split by prescence of distractor. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.'}
+Plots$Condition$Distraction
+```
+
+## 3.1. Behavioural Results Models
+```{r RT Tests, eval=FALSE, include=FALSE}
+## Just do this in JASP ##
+
+# ## Linear Models take longer than straight ANOVAs?
+# RTBayeslm_all <-
+#   BayesFactor::anovaBF(
+#     RT ~ Target * CueType * Condition + PartID,
+#     data = Trialdata[!is.na(Trialdata$RT),],
+#     whichRandom = "PartID",
+#     progress = T,
+#     iterations = 10
+# )
+# 
+# RTBayeslm_NullComparison <- head(RTBayeslm_all)/max(RTBayeslm_all)
+# ## See differences between most supported model
+# plot(RTBayeslm_NullComparison)
+```
+
+```{r PAF Anal}
+## Subjects
+EEGSubj <- as.character(Subjidx)
+EEGSubj[length(EEGSubj)+1] <- "CLP130"
+EEGSubj <- EEGSubj[c(1:29,32,30,31)]
+
+## Electrodes
+electrodes <- read.csv("EEG_Output/ElectrodeLabels.csv")
+
+## Analysis of Alpha EEG Data ##
+Alpha <- rmatio::read.mat("EEG_Output/ImpAlphaPower.mat")
+Alpha[["np"]] <- data.frame(Alpha$AlphaPower[,1,])
+names(Alpha[["np"]]) <- electrodes[!electrodes=="Cz"]
+Alpha[["np"]]$PartID <- EEGSubj
+Alpha[["np"]]$Condition <- "np"
+Alpha[["np"]][Alpha[["np"]]==0] <- NA
+Alpha[["p"]] <- data.frame(Alpha$AlphaPower[,2,])
+names(Alpha[["p"]]) <- electrodes[!electrodes=="Cz"]
+Alpha[["p"]]$PartID <- EEGSubj
+Alpha[["p"]]$Condition <- "p"
+Alpha[["p"]][Alpha[["p"]]==0] <- NA
+
+AlphaPower <- rbind(Alpha[["np"]],Alpha[["p"]])
+AlphaPower$Variable <- "AlphaPower"
+
+## Analysis of Peak Alpha Frequency EEG Data ##
+PAF <- rmatio::read.mat("EEG_Output/ImpPeakFrequency.mat")
+PAF[["np"]] <- data.frame(PAF$PeakFrequency[,1,])
+names(PAF[["np"]]) <- electrodes[!electrodes=="Cz"]
+PAF[["np"]]$PartID <- EEGSubj
+PAF[["np"]]$Condition <- "np"
+PAF[["np"]][PAF[["np"]]==0] <- NA
+PAF[["p"]] <- data.frame(PAF$PeakFrequency[,2,])
+names(PAF[["p"]]) <- electrodes[!electrodes=="Cz"]
+PAF[["p"]]$PartID <- EEGSubj
+PAF[["p"]]$Condition <- "p"
+PAF[["p"]][PAF[["p"]]==0] <- NA
+
+PAF <- rbind(PAF[["np"]],PAF[["p"]])
+PAF$Variable <- "PAF"
+
+# ## Analysis of Spectra EEG Data ##
+# PAF <- rmatio::read.mat("EEG_Output/ImpPeakFrequency.mat")
+# PAF[["np"]] <- data.frame(PAF$PeakFrequency[,1,])
+# names(PAF[["np"]]) <- electrodes[!electrodes=="Cz"]
+# PAF[["np"]]$PartID <- EEGSubj
+# PAF[["np"]]$Condition <- "np"
+# PAF[["np"]][PAF[["np"]]==0] <- NA
+# PAF[["p"]] <- data.frame(PAF$PeakFrequency[,2,])
+# names(PAF[["p"]]) <- electrodes[!electrodes=="Cz"]
+# PAF[["p"]]$PartID <- EEGSubj
+# PAF[["p"]]$Condition <- "p"
+# PAF[["p"]][PAF[["p"]]==0] <- NA
+# 
+# PAF <- rbind(PAF[["np"]],PAF[["p"]])
+# PAF$Variable <- "PAF"
+
+# Combine and make a long dataset
+EEG_Measures <- rbind(AlphaPower,PAF)
+write.csv(EEG_Measures,file = "Output/EEG_Measures.csv",row.names = F)
+# Make Long for plotting
+EEG_Plot <- reshape2::melt(EEG_Measures,
+                           id.vars = c("PartID","Condition","Variable"),
+                           value.name = "Amplitude",
+                           variable.name = "Site")
+write.csv(EEG_Plot,file = "Output/EEG_Measureslong.csv",row.names = F)
+
+```
+
+```{r Plot EEG Measures}
+SOI <- c("Fz","FCz","Cz","C3","C4","CPz","Pz")
+  EEG_Plot %>% 
+  dplyr::filter(Variable=="AlphaPower",Site %in% SOI) %>% 
+  ggplot(aes(y = Amplitude,
+             colour = Condition,
+             x = Site)) +
+    geom_jitter()+
+  geom_violin(alpha = 0,
+              scale = "width",
+              adjust = .5,
+              draw_quantiles = c(.5)) +
+  # scale_fill_manual(name = "Condition",
+  #                   labels = c("No Pain", "Pain"),
+  #                   values = cbbPalette) +
+      scale_colour_manual(name = "Condition",
+                    labels = c("No Pain", "Pain"),
+                    values = cbbPalette) +
+  ylab("Hz") +
+  theme_classic()
+  ggsave("Output/AlphaPlot.tiff")
+  # geom_errorbar(data = wse[["TargetAccuracy"]],
+  #               aes(ymin = RT - se,
+  #                   ymax = RT + se),
+  #               lwd = .3,
+  #               width = .5,
+  #               position = position_dodge(.9))
+
+```
+

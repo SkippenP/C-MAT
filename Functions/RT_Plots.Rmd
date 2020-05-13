@@ -1,0 +1,44 @@
+---
+title: "RT Plots"
+author: "Patrick Skippen"
+date: "09/03/2020"
+output: pdf_document
+---
+
+The following pages display plots desribing the RT effects on Modality, Preparation, Distraction, and Pain Condition. Headers seperate these specific effects. Pay attention to the key of each plot to determine the split of data (i.e., Distractor; Present vs. Absent).
+
+```{r Load Data, message=FALSE, warning=FALSE, include=FALSE}
+load("../Output/RT_Plots.RData")
+```
+
+# Modaility Effects
+```{r Modality, echo=FALSE, message=FALSE, warning=FALSE}
+Plots$Modality[["Accuracy"]]
+Plots$Modality[["Preparation"]]
+Plots$Modality[["Distraction"]]
+Plots$Modality[["Condition"]]
+```
+
+# Preparation Effects
+```{r Preparation, echo=FALSE, message=FALSE, warning=FALSE}
+Plots$Preparation[["Accuracy"]]
+Plots$Preparation[["Modality"]]
+Plots$Preparation[["Distraction"]]
+Plots$Preparation[["Condition"]]
+```
+
+# Distraction Effects
+```{r Distraction, echo=FALSE, message=FALSE, warning=FALSE}
+Plots$Distraction[["Accuracy"]]
+Plots$Distraction[["Modality"]]
+Plots$Distraction[["Preparation"]]
+Plots$Distraction[["Condition"]]
+```
+
+# Condition Effects
+```{r Condition, echo=FALSE, message=FALSE, warning=FALSE}
+Plots$Condition[["Accuracy"]]
+Plots$Condition[["Modality"]]
+Plots$Condition[["Preparation"]]
+Plots$Condition[["Distraction"]]
+```

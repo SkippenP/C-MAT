@@ -1,0 +1,245 @@
+\PassOptionsToPackage{unicode=true}{hyperref} % options for packages loaded elsewhere
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+  english,
+  ,man,floatsintext]{apa6}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+  pdftitle={Cross frequency coupling of attentional EEG task under pain},
+  pdfborder={0 0 0},
+  breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-2}
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+% Manuscript styling
+\usepackage{upgreek}
+\captionsetup{font=singlespacing,justification=justified}
+
+% Table formatting
+\usepackage{longtable}
+\usepackage{lscape}
+% \usepackage[counterclockwise]{rotating}   % Landscape page setup for large tables
+\usepackage{multirow}		% Table styling
+\usepackage{tabularx}		% Control Column width
+\usepackage[flushleft]{threeparttable}	% Allows for three part tables with a specified notes section
+\usepackage{threeparttablex}            % Lets threeparttable work with longtable
+
+% Create new environments so endfloat can handle them
+% \newenvironment{ltable}
+%   {\begin{landscape}\begin{center}\begin{threeparttable}}
+%   {\end{threeparttable}\end{center}\end{landscape}}
+\newenvironment{lltable}{\begin{landscape}\begin{center}\begin{ThreePartTable}}{\end{ThreePartTable}\end{center}\end{landscape}}
+
+% Enables adjusting longtable caption width to table width
+% Solution found at http://golatex.de/longtable-mit-caption-so-breit-wie-die-tabelle-t15767.html
+\makeatletter
+\newcommand\LastLTentrywidth{1em}
+\newlength\longtablewidth
+\setlength{\longtablewidth}{1in}
+\newcommand{\getlongtablewidth}{\begingroup \ifcsname LT@\roman{LT@tables}\endcsname \global\longtablewidth=0pt \renewcommand{\LT@entry}[2]{\global\advance\longtablewidth by ##2\relax\gdef\LastLTentrywidth{##2}}\@nameuse{LT@\roman{LT@tables}} \fi \endgroup}
+
+% \setlength{\parindent}{0.5in}
+% \setlength{\parskip}{0pt plus 0pt minus 0pt}
+
+% \usepackage{etoolbox}
+\makeatletter
+\patchcmd{\HyOrg@maketitle}
+  {\section{\normalfont\normalsize\abstractname}}
+  {\section*{\normalfont\normalsize\abstractname}}
+  {}{\typeout{Failed to patch abstract.}}
+\makeatother
+\shorttitle{Cross Pain}
+\author{Patrick Skippen\textsuperscript{1}, David Seminowicz\textsuperscript{1}, Ali Mazaheri\textsuperscript{2}, Samantha Mallard\textsuperscript{1}, \& Siobhan Schabrun\textsuperscript{1}}
+\affiliation{
+\vspace{0.5cm}
+\textsuperscript{1} Neuroscience Research Australia, Randwick Australia\\\textsuperscript{2} Where-ever Ali is, Country}
+\authornote{
+
+
+Author's  contributions: DS and AM conceptualised the research plan and raitonale. PS took the lead role in manuscript preparation, formulated the analysis plan, and undertook majority of the data analysis. SS xyz.
+The data and code used to create this manuscript can be found at https://osf.io/XXXX/
+This is version 1: 02/2020
+
+
+Correspondence concerning this article should be addressed to Patrick Skippen, Neuroscience Research Australia, Barker St, Randwick, Australia. E-mail: p.skippen@neura.edu.au}
+\note{\textbackslash{}clearpage}
+\keywords{}
+\usepackage{csquotes}
+\usepackage{float}
+\usepackage{caption}
+\floatplacement{figure}{H}
+\raggedbottom
+\usepackage{pdflscape}
+\newcommand{\blandscape}{\begin{landscape}}
+\newcommand{\elandscape}{\end{landscape}}
+\ifnum 0\ifxetex 1\fi=0 % if pdftex or luatex
+  \usepackage[shorthands=off,main=english]{babel}
+\else % if xetex
+  % load polyglossia as late as possible as it *could* call bidi if RTL lang (e.g. Hebrew or Arabic)
+  \usepackage{polyglossia}
+  \setmainlanguage[]{english}
+\fi
+
+\title{Cross frequency coupling of attentional EEG task under pain}
+
+\date{}
+
+\abstract{
+blah blah.
+}
+
+\begin{document}
+\maketitle
+
+\setlength{\abovedisplayskip}{-20pt}
+\setlength{\belowdisplayskip}{3pt}
+\setlength{\abovedisplayshortskip}{-30pt}
+\setlength{\belowdisplayshortskip}{3pt}
+
+\hypertarget{introduction}{%
+\section{1. Introduction}\label{introduction}}
+
+\hypertarget{methods}{%
+\section{2. Methods}\label{methods}}
+
+\hypertarget{participants}{%
+\subsection{2.1. Participants}\label{participants}}
+
+A total of 31 participants were recruited for the study. They were recruited from \emph{Insert here} and ranged in age from \emph{X-Xyrs (X\% Female)}. The study confirmed to ethics approved by \emph{Ethics board of study}.
+
+\hypertarget{procedure}{%
+\subsection{2.2. Procedure}\label{procedure}}
+
+\hypertarget{x.-cross-modal-attention-task}{%
+\subsubsection{2.2.X. Cross-modal Attention task}\label{x.-cross-modal-attention-task}}
+
+The Cross-modal Attention task requires participants to respond to either the position of a visual target or the pitch of an auditory target. Targets can appear simultaneously and so participants are presented with a cue to indicate the correct target in the upcoming trial. This version of the task consisted of three types of cues. Cues consisted of \emph{Insert what cues looked like} presented on screen for \emph{How long were cues presented?}. Cue \emph{one} indicated the participant should respond to the position of the visual target. Cue \emph{two} indicated that participants should respond to the pitch of the auditory target. These two cues occured on 40\% of trials each. On the remaining 20\% of trials, participants recieved an ambiguous cue, which gave no information about the upcoming target. On these trials only one target was presented. Equal ratios of auditory and visual targets followed ambiguous cues (\emph{I'm guessing this is true?}).
+
+Cues were displayed for 250ms and targets for 60ms {[}\emph{Please confirm this is correct. Trigger codes did not specify exactly}{]}. The cue to target interval (CIT) jittered between 684-1644 in steps of \textbf{XXX} (\emph{Values for this change with participants. Some have maxs of \textasciitilde{}800ms and min of \textasciitilde{}700ms. Others (N = 3) have max \textasciitilde{}1500 and min \textasciitilde{}1400}). Each trial lasted approximately 2613, with a jitter of \textbf{XXX} (\emph{Again, same three participants throw this estimate out}).
+
+\hypertarget{results}{%
+\section{3. Results}\label{results}}
+
+\hypertarget{behavioural-results}{%
+\subsection{3.1. Behavioural Results}\label{behavioural-results}}
+
+\hypertarget{modality-effects}{%
+\subsubsection{3.1.1. Modality Effects}\label{modality-effects}}
+
+Visual targets (341.63 +/- 16.43) were identified faster than auditory targets (444.97 +/- 22.50). The percentage of errer trials was higher for auditory targets compared to visual targets. Visual targets were incorrectly responded to on 3.36 +/- 0.26\% trials, while auditory targets had an error rate of 11.17 +/- 1.37\%. Given the low error rates, RTs to error trials were not examined here (but see Figure 1). Omissions across each target type was low (Visual = 5.18\%, Auditory = 5.18\%).
+
+\begin{figure}
+\centering
+\includegraphics{ManuscriptMarkdown_files/figure-latex/Figureone-1.pdf}
+\caption{\label{fig:Figureone}Violin plot of RT to visual and auditory targets. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean}
+\end{figure}
+
+\hypertarget{preparatory-effects}{%
+\subsubsection{3.1.2. Preparatory Effects}\label{preparatory-effects}}
+
+To examine the effect of preparation, reaction times of trials with informative cues were compared to trials with ambiguous cues. Correct trial RTs for auditory targets decreased from 468.20 +/- 24.66ms for ambiguous cues to 439.11 +/- 22.01ms for informative cues. For visual targets the average RT decreased from 349.56 +/- 17.04 ms for ambiguous cues to 339.63 +/- 16.39 ms for informative cues. The faster identification of trials with an informative cue suggest that top-down processes facilitated target processing.
+
+\begin{figure}
+\centering
+\includegraphics{ManuscriptMarkdown_files/figure-latex/Figuretwo-1.pdf}
+\caption{\label{fig:Figuretwo}Violin plot of RT to ambiguous and informatively cued targets, split by correct and erronous responses. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.}
+\end{figure}
+
+Cues had the opposite influence on task accuracy. Auditory targets were incorrectly responded to in 9.52 +/- 1.40\% of trials with an uninformative cue and in 11.94 +/- 1.53\% with an informative cue. However, visual targets showed little difference in error rates between trials with ambiguous cues (3.65 +/- 0.29\%) and trials with informative cues (3.40 +/- 0.32\%). As noted above, there was a probable ceiling effect on performance. However, omission rates showed some considerable differences between targets based upon whether they were cued or not. Omissions occured on 10.18 +/- 1.63\% of auditory trials with an ambiguos cue. In comparison, informatively cued auditory trials contained 7.52 +/- 1.07\% omissions. A similar effect is seen with visual targets. Ambiguously cued visual targets contained 8.05 +/- 2.22\% of omissions, while informatively cued trials contained 8.05 +/- 2.22\% omission trials.
+
+\hypertarget{distraction-effects}{%
+\subsubsection{3.1.3. Distraction Effects}\label{distraction-effects}}
+
+To test whether participants were disturbed by the presentation of distractors in a different modality, RTs from trials containing distractors were compared to RTs from the distractor absent trials. Informatively cued Auditory trials without distractors had mean RT of 435.36 +/- 23.96ms, while Auditory trials with distraction had mean RT of 459.99 +/- 20.68ms. Similary, Visual targets had slower RT when distractions were present (362.49 +/- 16.36ms) compared to without (327.95 +/- 16.79ms). Presentation of a distractor in a different modality is detrimental for task performance and a mechanism for active inhibition of distractors could be beneficial during this task.
+
+\begin{figure}
+\centering
+\includegraphics{ManuscriptMarkdown_files/figure-latex/Figurethree-1.pdf}
+\caption{\label{fig:Figurethree}Violin plot of RT to targets with and without distraction, split by correct and erronous responses. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.}
+\end{figure}
+
+\hypertarget{pain-effects}{%
+\subsubsection{3.1.4. Pain Effects}\label{pain-effects}}
+
+The effect of pain on performance can be measured in a number of ways. Overall RT was relatively similar in the pain (388.79 +/- 20.20) vs no pain conditions (393.74 +/- 18.74). Likewise, overall error rates in the pain condition (8.48 +/- 1.08) were similar to the no pain condition (8.24 +/- 0.82). Omission rates were also found to be comparable across conditions (pain = 6.11 +/- 0.81, no pain = 7.13 +/- 0.97). Therefore an overall affect of condtion on performance was not present. However, pain may influence specific effects of preparation and distraction.
+
+\begin{figure}
+\centering
+\includegraphics{ManuscriptMarkdown_files/figure-latex/Figurefour-1.pdf}
+\caption{\label{fig:Figurefour}Violin plot of RT with and without pain, split by correct and erronous responses. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.}
+\end{figure}
+
+\hypertarget{pain-interactions}{%
+\subsubsection{3.1.5. Pain Interactions}\label{pain-interactions}}
+
+The RT benefit of visual targets was the same across pain (Auditory - Visual RT = 106.84 +/- 6.07) and no pain conditions (Auditory - Visual RT = 100.86 +/- 6.03).
+
+\begin{verbatim}
+NULL
+\end{verbatim}
+
+In the pain condition, there was only a small improvement in preparation costs. Ambiguous cues were 17.45 +/- 6.15ms slower compared to informatively cued trials in the pain condition. However, this difference was 19.29 +/- 5.16ms in the no pain condition.
+
+\begin{figure}
+\centering
+\includegraphics{ManuscriptMarkdown_files/figure-latex/Figuresix-1.pdf}
+\caption{\label{fig:Figuresix}Violin plot of RT with and without pain, split by cue type. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.}
+\end{figure}
+
+Distraction effects showed little differences between the pain condition (28.38 +/- 384.88) and no pain conditions (392.06 +/- 392.06).
+
+\begin{figure}
+\centering
+\includegraphics{ManuscriptMarkdown_files/figure-latex/Figureseven-1.pdf}
+\caption{\label{fig:Figureseven}Violin plot of RT with and without pain, split by prescence of distractor. Median RT is presented as a horizontal line in each violin, with error bars displaying the standard error of the mean.}
+\end{figure}
+
+\end{document}
