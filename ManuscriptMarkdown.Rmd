@@ -69,9 +69,9 @@ Packages <- c("ggplot2","dplyr","reshape",#"wesanderson",
               "rmarkdown","data.table","devtools") # Slew of packages used here.
 
 # # Install CRAN packages, if necessary
-if(sum(!Packages %in% rownames(installed.packages()))>=1){
-invisible(lapply(Packages,install.packages,dependencies=TRUE))
-}
+# if(sum(!Packages %in% rownames(installed.packages()))>=1){
+# invisible(lapply(Packages,install.packages,dependencies=TRUE))
+# }
 
 # Library Packags
 invisible(lapply(Packages,library,character.only=TRUE))
@@ -106,9 +106,15 @@ knitr::opts_chunk$set(echo = TRUE, fig.pos= "h")
 
 # 2. Methods
 ```{r Methods Set-up, echo=FALSE}
-Subjidx <- dir("../Data/")
-# Participant "CLP130" has a few problems. Including odd trigger codes. We'll rid ourselves of this participant for now.
-Subjidx <- Subjidx[-30]
+
+# As per the following document. Only CLP106 -> CLP 149 are useable
+PainCodes <- read.csv("EEGIdentity.csv")
+PainCodes$Subjidx <- paste("CLP",PainCodes$Subjidx,sep = "")
+
+Subjidx <- PainCodes$Subjidx
+
+# # Participant "CLP130" has a few problems. Including odd trigger codes. We'll rid ourselves of this participant for now.
+# Subjidx <- Subjidx[-30]
 
 Conditions <- c("np","p")
 source('Functions/ExtractRT_MATLAB.R')
@@ -157,27 +163,64 @@ write.csv(Trialdata,file = "Output/TrialData.csv",
 ## Load data
 tmp = load("Output/Trial_list.RData")
 Trialdata <- read.csv("Output/TrialData.csv")
-Subjidx <- unique(Trialdata$PartID)
-## Some extreme CTI and ITI values were found. See plots
-# hist(Trialdata$CTI)
-# hist(Trialdata$ITI)
-# Participants 101,102,107 are clear outliers and appear to have some extra long CTIs
+Trialdata <- Trialdata[Trialdata$PartID %in% Subjidx,]
+
+## check CTI and ITI values:
+hist(Trialdata$CTI)
+hist(Trialdata$ITI)
+table(Trialdata$PartID[Trialdata$ITI>4000]) # CLP124 might need a look into for long ITIs
 
 ## Calculate summary variables and store in data frame
 source('Functions/MethodsList.R')
-Summdata <- MethodsList(Trialdata)
+Summdata <- MethodsList(Trialdata) # Can ignore warnings - RE: meaning RT for miss trials/SD for 2 trials total
 ```
 
 ## 2.1. Participants
-  A total of `r length(unique(Summdata$PartID))` participants were recruited for the study. They were recruited from *Insert here* and ranged in age from *X-Xyrs (X% Female)*. The study confirmed to ethics approved by *Ethics board of study*.  
+  A total of *XXX* participants were recruited for the study, recruited from *Insert here*. A total of `r length(unique(Summdata$PartID))` participants remained after data cleaning and exclusion as outlined below. These participants ranged in age from *X-Xyrs (mean +/- SD) and were X% Female*. The study confirmed to ethics approved by *Ethics board of study*. 
 
 ## 2.2. Procedure
 
-### 2.2.X. Cross-modal Attention task
+### 2.2.1. Cross-modal Attention task
 
 The Cross-modal Attention task requires participants to respond to either the position of a visual target or the pitch of an auditory target. Targets can appear simultaneously and so participants are presented with a cue to indicate the correct target in the upcoming trial. This version of the task consisted of three types of cues. Cues consisted of *Insert what cues looked like* presented on screen for *How long were cues presented?*. Cue *one* indicated the participant should respond to the position of the visual target. Cue *two* indicated that participants should respond to the pitch of the auditory target. These two cues occurred on `r round((1-(table(Trialdata$CueType)[[1]]/sum(table(Trialdata$CueType))))/2,1)*100`% of trials each. On the remaining `r round((table(Trialdata$CueType)[[1]]/sum(table(Trialdata$CueType))),1)*100`% of trials, participants received an ambiguous cue, which gave no information about the upcoming target. On these trials only one target was presented. Equal ratios of auditory and visual targets followed ambiguous cues (*I'm guessing this is true?*).
 
-  Cues were displayed for 250ms and targets for 60ms [*Please confirm this is correct. Trigger codes did not specify exactly*]. The cue to target interval (CIT) jittered between `r round(min(Trialdata$CTI,na.rm=T),0)`-`r round(max(Trialdata$CTI,na.rm=T),0)` in steps of **XXX** (*Values for this change with participants. Some have maxes of ~800ms and min of ~700ms. Others (N = 3) have max ~1500 and min ~1400*). Each trial lasted approximately `r round(mean(Trialdata %>% group_by(PartID) %>% summarise(meanITI = mean(ITI,na.rm=T)) %>% .$meanITI),0)`, with a jitter of **XXX** (*Again, same three participants throw this estimate out*).  
+  Cues were displayed for 250ms and targets for 60ms [*Please confirm this is correct. Trigger codes did not specify exactly*]. The cue to target interval (CIT) jittered between `r round(min(Trialdata$CTI,na.rm=T),0)`-`r round(max(Trialdata$CTI,na.rm=T),0)` in steps of **XXX** (*Values for this change with participants. Some have maxes of ~800ms and min of ~700ms. Others (N = 3) have max ~1500 and min ~1400* **I beleive I have fixed this with removal of some px**). Each trial lasted approximately `r round(mean(Trialdata %>% group_by(PartID) %>% summarise(meanITI = mean(ITI,na.rm=T)) %>% .$meanITI),0)`, with a jitter of **XXX**.
+
+### 2.2.2. EEG Recording
+  Participants completed the aforementioned task with concurent EEG recording using a **XXXX** system, fitted to the standard 10-20 system. EEG was sampled at 500Hz and referenced to referenced to the Afz electrode. Peripheral recordings of galvantic skin conductance, heart rate, and respiration were taken.
+  
+## 2.3. Data Extraction
+### 2.3.1. Behaivoural Data
+  The extracted variables from the beahvioural data include mean and standard deviation of correct reaction times (RT), mean and standard deviation of erronous reaction times (RT~err~), percentage of errors of comission, percentage of omission errors. For each condition (i.e., No-pain vs Pain) these variables were extracted across the following groupings; Modality (Visual vs Auditory cues), Preparation (Cued vs Ambiguous trials), and Distraction (Present vs Absent distractors).
+  
+### 3.3.2. EEG Data
+```{r EEG summary}
+## Calculate the summary stats of the EEG analysis. RE: trial counts, channel/component removal
+
+# Read in data from .mat files
+
+# Summarise number of removed channels
+
+# Summarise number of removed components
+
+# Summarise number of removed trials
+
+# Summarise the average total number of trials for each condition
+
+
+```
+  An outline of the EEG pre-processing undertaken here is presented in Figure *X*. EEG data were first average referenced and high pass filtered at 1Hz using the *removeTrend* function. Line noise of 6Hz and its associated harmonics was removed using a notch filter before the *clean_artifacts* function was used to detect bad channels. Channels were marked for removal is there was noise greater than 4 standard deviations greater than the mean, 1/5th of the channel was flat, or correlations with other channels was lower than .8. This processed removed an average of **XX** +/- **XX** of channels. The results of this were visually inspected ad confirmed before data was subjected to ICA. Resulting components from the *run_ica* output was marked for removal with the the ICLabel algorthm, where compnents classifed greater than 75% eye, greater than 80% muscle, or greater than 90% heart, line, and channel were removed. Visual inspection confirmed the component removal and the ICA weights were saved for later referral.
+  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of **XX** +/- **XX** copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. EEGLABs extreme epoch noise detection using EEGLab's threshold & joint probability procedures was undertaken with the cut-off for amplitude set at 100uV **put in other stuff heree**. An average of **XX** +/- **XX** trials were removed using this procedure for each participant. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
+  An average of **XX** +/- trials remained for each participant. Visual and auditory cued trials made up XX% of these trials, matching the original paradigm setting of XX%. Time freqeucny transform was undertaken closely following the advice of Cohen (2014; *check refrence*). In short, Morelt wavelets were created at different frequency dependent widths. Across the 80 linearlly spaced frequency bins between 3 and 30Hz, wavelets were created with widths between 6 and 10 cycles. In other words, smaller width wavelets were used for slower frequencies and larger width wavelets were used for faster frequncies. This allowed for the investigation of multiple freqency bands (i.e., both Theta and Alpha) with approximately the same resolution. The output of this process was baselined using a decibel conversion to the time period -500 to -200ms pre-cue. ERPs to each cue were taken for the time period up to 1 second post cue. To control for high frequency noise, the data were low pass filtered at 30Hz for the ERP analyis. ERPs were baselined -200ms to cue onset (i.e., 0ms).
+  
+## 2.4. Statistical Procedure
+### 2.4.1. Behavioural Analysis
+**UPDATE**
+  The behavioural data of the C-MAT task was first assessed in the no pain condition. To explore the influence of Modality, Preparation, and Distraction, a large Bayesian ANOVA model comparing each of these was established. Models were run on correct reaction times. However, as error and omission rates were overall low and absent in some participants, these effects should be treated with caution.
+  To test the presence or absence of an effect we first examined the overall best fit model by examining Bayes Factors of each model respective to the null model. If interactions were present we also assessed the inclusion Bayes Factor, by controlling for simple effects of the interaction. The BF~inclusion~ described the evidence for the inclusion of a specific factor of the model. The influence of pain on the aformentioned effects is then assesed by adding a Pain (No-Pain vs. Pain) factor to the overall model.
+  
+### 2.4.2. EEG Analysis
+  
   
 # 3. Results  
 ```{r Results Set-up, echo=FALSE}
@@ -194,7 +237,7 @@ cbbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"
 if(!file.exists("Output/RT_Boxplots.pdf")){
   source("Functions/RT_Plots.R")
 }
-tmp =load(file = "Output/RT_Plots.RData")
+tmp = load(file = "Output/RT_Plots.RData")
 
 #### Error Rates Calclations ####
 
@@ -290,6 +333,7 @@ write.csv(SPSSdata, file = "Output/Miss_SPSSdata.csv",
 write.csv(Missdata, file = "Output/Miss_data.csv",
           row.names = F)
 ```
+
 ## 3.1. Behavioural Results
 ```{r Table 1, echo=FALSE}
 T1mean <- list()
