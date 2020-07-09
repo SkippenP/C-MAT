@@ -106,15 +106,24 @@ knitr::opts_chunk$set(echo = TRUE, fig.pos= "h")
 
 # 2. Methods
 ```{r Methods Set-up, echo=FALSE}
-
 # As per the following document. Only CLP106 -> CLP 149 are useable
 PainCodes <- read.csv("EEGIdentity.csv")
 PainCodes$Subjidx <- paste("CLP",PainCodes$Subjidx,sep = "")
 
-Subjidx <- PainCodes$Subjidx
+Subjidx <- dir(path = "Data/RejectData/",
+               pattern = "CLP*")
+# Remove CLP116_2 until we know what that's about.
+Subjidx <- Subjidx[Subjidx != "CLP116_2"]
 
-# # Participant "CLP130" has a few problems. Including odd trigger codes. We'll rid ourselves of this participant for now.
-# Subjidx <- Subjidx[-30]
+# Seperate into those with pain data and those without
+pain_Subjidx <- Subjidx[unlist(
+  lapply(Subjidx, function(px)
+    file.exists(
+      paste("Data/RejectData/", px, "/", px, "_p_BadChannels.txt",sep = "")
+    )))]
+
+# Reduce particpants down to finalised numbers
+PainCodes <- PainCodes[PainCodes$Subjidx %in% Subjidx,]
 
 Conditions <- c("np","p")
 source('Functions/ExtractRT_MATLAB.R')
@@ -168,11 +177,11 @@ Trialdata <- Trialdata[Trialdata$PartID %in% Subjidx,]
 ## check CTI and ITI values:
 hist(Trialdata$CTI)
 hist(Trialdata$ITI)
-table(Trialdata$PartID[Trialdata$ITI>4000]) # CLP124 might need a look into for long ITIs
+table(Trialdata$PartID[Trialdata$ITI>4000]) # CLP114 and CLP124 might need a look into for long ITIs
 
 ## Calculate summary variables and store in data frame
 source('Functions/MethodsList.R')
-Summdata <- MethodsList(Trialdata) # Can ignore warnings - RE: meaning RT for miss trials/SD for 2 trials total
+Summdata <- MethodsList(Trialdata) # Can ignore warnings - RE: mean RT for miss trials/SD for 2 trials total
 ```
 
 ## 2.1. Participants
@@ -196,21 +205,226 @@ The Cross-modal Attention task requires participants to respond to either the po
 ### 3.3.2. EEG Data
 ```{r EEG summary}
 ## Calculate the summary stats of the EEG analysis. RE: trial counts, channel/component removal
+EEGPreProc <- list()
+# Read in data from .txt files
+EEGPreProc[["BadChan"]] <- list()
 
-# Read in data from .mat files
+## Collate number of removed channels
+EEGPreProc[["BadChan"]][["np"]] <- lapply(Subjidx,
+                                          function(px)
+                                            nrow(
+                                              read.table(
+                                                paste("Data/RejectData/",
+                                                      px, "/",
+                                                      px,
+                                                      "_np_BadChannels.txt",
+                                                      sep = ""),
+                                                row.names = NULL,
+                                                quote = "\"",
+                                                comment.char = ""
+                                              )
+                                            ))
 
-# Summarise number of removed channels
+names(EEGPreProc[["BadChan"]][["np"]]) <- Subjidx
 
-# Summarise number of removed components
+EEGPreProc[["BadChan"]][["p"]] <- lapply(pain_Subjidx,
+                                         function(px)
+                                           nrow(
+                                             read.table(
+                                               paste("Data/RejectData/",
+                                                     px, "/",
+                                                     px,
+                                                     "_p_BadChannels.txt",
+                                                     sep = ""),
+                                               row.names = NULL,
+                                               quote = "\"",
+                                               comment.char = ""
+                                             )
+                                           ))
 
-# Summarise number of removed trials
+names(EEGPreProc[["BadChan"]][["p"]]) <- pain_Subjidx
 
-# Summarise the average total number of trials for each condition
+# Both conditions together
+EEGPreProc[["BadChan"]][["Both"]] <- setNames(mapply(c, EEGPreProc[["BadChan"]][["np"]][Subjidx], EEGPreProc[["BadChan"]][["p"]][Subjidx]), Subjidx)
+
+# Both conditions averaged
+EEGPreProc[["BadChan"]][["Average"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["BadChan"]][["Both"]][[x]])) 
+
+## Summarise number of removed components
+EEGPreProc[["RejComp"]][["np"]] <- lapply(Subjidx,
+                                          function(px)
+                                            nrow(
+                                              read.table(
+                                                paste("Data/RejectData/",
+                                                      px, "/",
+                                                      px,
+                                                      "_np_RejectedComps.txt",
+                                                      sep = ""),
+                                                row.names = NULL,
+                                                quote = "\"",
+                                                comment.char = ""
+                                              )
+                                            ))
+
+names(EEGPreProc[["RejComp"]][["np"]]) <- Subjidx
+
+EEGPreProc[["RejComp"]][["p"]] <- lapply(pain_Subjidx,
+                                         function(px)
+                                           nrow(
+                                             read.table(
+                                               paste("Data/RejectData/",
+                                                     px, "/",
+                                                     px,
+                                                     "_p_RejectedComps.txt",
+                                                     sep = ""),
+                                               row.names = NULL,
+                                               quote = "\"",
+                                               comment.char = ""
+                                             )
+                                           ))
+
+names(EEGPreProc[["RejComp"]][["p"]]) <- pain_Subjidx
+
+# Both conditions together
+EEGPreProc[["RejComp"]][["Both"]] <- setNames(mapply(c, EEGPreProc[["RejComp"]][["np"]][Subjidx], EEGPreProc[["RejComp"]][["p"]][Subjidx]), Subjidx)
+
+# Both conditions averaged
+EEGPreProc[["RejComp"]][["Average"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejComp"]][["Both"]][[x]])) 
+
+## Summarise number of removed trials
+EEGPreProc[["RejTrial"]][["np"]][["Visual"]] <- lapply(Subjidx,
+                                                       function(px)
+                                                         read.table(
+                                                           paste(
+                                                             "Data/RejectData/",
+                                                             px,
+                                                             "/",
+                                                             px,
+                                                             "_np_RF_Proc_RejTrials.txt",
+                                                             sep = ""
+                                                           ),
+                                                           row.names = NULL,
+                                                           quote = "\"",
+                                                           comment.char = ""
+                                                         )[[1, 1]])
+
+names(EEGPreProc[["RejTrial"]][["np"]][["Visual"]]) <- Subjidx
+
+EEGPreProc[["RejTrial"]][["np"]][["Auditory"]] <- lapply(Subjidx,
+                                                       function(px)
+                                                         read.table(
+                                                           paste(
+                                                             "Data/RejectData/",
+                                                             px,
+                                                             "/",
+                                                             px,
+                                                             "_np_RF_Proc_RejTrials.txt",
+                                                             sep = ""
+                                                           ),
+                                                           row.names = NULL,
+                                                           quote = "\"",
+                                                           comment.char = ""
+                                                         )[[2, 1]])
+
+names(EEGPreProc[["RejTrial"]][["np"]][["Auditory"]]) <- Subjidx
+
+EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]] <- lapply(Subjidx,
+                                                       function(px)
+                                                         read.table(
+                                                           paste(
+                                                             "Data/RejectData/",
+                                                             px,
+                                                             "/",
+                                                             px,
+                                                             "_np_RF_Proc_RejTrials.txt",
+                                                             sep = ""
+                                                           ),
+                                                           row.names = NULL,
+                                                           quote = "\"",
+                                                           comment.char = ""
+                                                         )[[3, 1]])
+
+names(EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]]) <- Subjidx
+
+
+EEGPreProc[["RejTrial"]][["p"]][["Visual"]] <- lapply(pain_Subjidx,
+                                                       function(px)
+                                                         read.table(
+                                                           paste(
+                                                             "Data/RejectData/",
+                                                             px,
+                                                             "/",
+                                                             px,
+                                                             "_p_RF_Proc_RejTrials.txt",
+                                                             sep = ""
+                                                           ),
+                                                           row.names = NULL,
+                                                           quote = "\"",
+                                                           comment.char = ""
+                                                         )[[1, 1]])
+
+names(EEGPreProc[["RejTrial"]][["p"]][["Visual"]]) <- pain_Subjidx
+
+EEGPreProc[["RejTrial"]][["p"]][["Auditory"]] <- lapply(pain_Subjidx,
+                                                       function(px)
+                                                         read.table(
+                                                           paste(
+                                                             "Data/RejectData/",
+                                                             px,
+                                                             "/",
+                                                             px,
+                                                             "_p_RF_Proc_RejTrials.txt",
+                                                             sep = ""
+                                                           ),
+                                                           row.names = NULL,
+                                                           quote = "\"",
+                                                           comment.char = ""
+                                                         )[[2, 1]])
+
+names(EEGPreProc[["RejTrial"]][["p"]][["Auditory"]]) <- pain_Subjidx
+
+EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]] <- lapply(pain_Subjidx,
+                                                       function(px)
+                                                         read.table(
+                                                           paste(
+                                                             "Data/RejectData/",
+                                                             px,
+                                                             "/",
+                                                             px,
+                                                             "_p_RF_Proc_RejTrials.txt",
+                                                             sep = ""
+                                                           ),
+                                                           row.names = NULL,
+                                                           quote = "\"",
+                                                           comment.char = ""
+                                                         )[[3, 1]])
+
+names(EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]]) <- pain_Subjidx
+
+# Both conditions together
+EEGPreProc[["RejTrial"]][["Both"]][["Visual"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Visual"]][Subjidx],                                                       EEGPreProc[["RejTrial"]][["p"]][["Visual"]][Subjidx]), Subjidx)
+
+EEGPreProc[["RejTrial"]][["Both"]][["Auditory"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Auditory"]][Subjidx], EEGPreProc[["RejTrial"]][["p"]][["Auditory"]][Subjidx]), Subjidx)
+
+EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]][Subjidx], EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]][Subjidx]), Subjidx)
+
+# Both conditions averaged
+EEGPreProc[["RejTrial"]][["Average"]][["Visual"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Visual"]][[x]]))
+
+EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Auditory"]][[x]]))
+
+EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]][[x]]))
+
+## Total Trials
+sum(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]][[1]],
+    EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]][[1]],
+    EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]][[1]])
+
 
 
 ```
-  An outline of the EEG pre-processing undertaken here is presented in Figure *X*. EEG data were first average referenced and high pass filtered at 1Hz using the *removeTrend* function. Line noise of 6Hz and its associated harmonics was removed using a notch filter before the *clean_artifacts* function was used to detect bad channels. Channels were marked for removal is there was noise greater than 4 standard deviations greater than the mean, 1/5th of the channel was flat, or correlations with other channels was lower than .8. This processed removed an average of **XX** +/- **XX** of channels. The results of this were visually inspected ad confirmed before data was subjected to ICA. Resulting components from the *run_ica* output was marked for removal with the the ICLabel algorthm, where compnents classifed greater than 75% eye, greater than 80% muscle, or greater than 90% heart, line, and channel were removed. Visual inspection confirmed the component removal and the ICA weights were saved for later referral.
-  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of **XX** +/- **XX** copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. EEGLABs extreme epoch noise detection using EEGLab's threshold & joint probability procedures was undertaken with the cut-off for amplitude set at 100uV **put in other stuff heree**. An average of **XX** +/- **XX** trials were removed using this procedure for each participant. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
+  An outline of the EEG pre-processing undertaken here is presented in Figure *X*. EEG data were first average referenced and high pass filtered at 1Hz using the *removeTrend* function. Line noise of 6Hz and its associated harmonics was removed using a notch filter before the *clean_artifacts* function was used to detect bad channels. Channels were marked for removal is there was noise greater than 4 standard deviations greater than the mean, 1/5th of the channel was flat, or correlations with other channels was lower than .8. This processed removed an average of `r round(mean(unlist(EEGPreProc$BadChan$Average)),0)` +/- `r round(sd(unlist(EEGPreProc$BadChan$Average)),0)` of channels. The results of this were visually inspected ad confirmed before data was subjected to ICA. Resulting components from the *run_ica* output was marked for removal with the the ICLabel algorthm, where compnents classifed greater than 75% eye, greater than 80% muscle, or greater than 90% heart, line, and channel were removed. Visual inspection confirmed the component removal and the ICA weights were saved for later referral.
+  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of `r round(mean(unlist(EEGPreProc$RejComp$Average)),0)` +/- `r round(sd(unlist(EEGPreProc$RejComp$Average)),0)` copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. EEGLABs extreme epoch noise detection using EEGLab's threshold & joint probability procedures was undertaken with the cut-off for amplitude set at 100uV **put in other stuff heree**. An average of `r round(mean(unlist(EEGPreProc$RejTrial$Average)),0)` +/- `r round(sd(unlist(EEGPreProc$RejTrial$Average)),0)` trials were removed using this procedure for each participant. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
   An average of **XX** +/- trials remained for each participant. Visual and auditory cued trials made up XX% of these trials, matching the original paradigm setting of XX%. Time freqeucny transform was undertaken closely following the advice of Cohen (2014; *check refrence*). In short, Morelt wavelets were created at different frequency dependent widths. Across the 80 linearlly spaced frequency bins between 3 and 30Hz, wavelets were created with widths between 6 and 10 cycles. In other words, smaller width wavelets were used for slower frequencies and larger width wavelets were used for faster frequncies. This allowed for the investigation of multiple freqency bands (i.e., both Theta and Alpha) with approximately the same resolution. The output of this process was baselined using a decibel conversion to the time period -500 to -200ms pre-cue. ERPs to each cue were taken for the time period up to 1 second post cue. To control for high frequency noise, the data were low pass filtered at 30Hz for the ERP analyis. ERPs were baselined -200ms to cue onset (i.e., 0ms).
   
 ## 2.4. Statistical Procedure
