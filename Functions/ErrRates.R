@@ -1,4 +1,5 @@
 ErrRates <- function(list, sublist, sublist_levels,subj) {
+  
   ErrorRates <- list()
   OmmRates   <- list()
   
@@ -11,6 +12,7 @@ ErrRates <- function(list, sublist, sublist_levels,subj) {
         (subjdummy$n[subjdummy[[sublist]] == x &
                        subjdummy$Accuracy == "Miss"] / sum(subjdummy$n[subjdummy[[sublist]] == x])) * 100)
     names(OmmRates[[i]]) <- sublist_levels
+    OmmRates[[i]] <- ifelse(length(unlist(OmmRates[[i]]))==0,NA,OmmRates[[i]])
   
     ## Do the same for errors
     ErrorRates[[i]] <-
@@ -18,12 +20,13 @@ ErrRates <- function(list, sublist, sublist_levels,subj) {
         (subjdummy$n[subjdummy[[sublist]] == x &
                        subjdummy$Accuracy == "Error"] / sum(subjdummy$n[subjdummy[[sublist]] == x])) * 100)
     names(ErrorRates[[i]]) <- sublist_levels
+    ErrorRates[[i]] <- ifelse(length(unlist(ErrorRates[[i]]))==0,NA,ErrorRates[[i]])
+    
     
   }
   names(OmmRates) <- subj
   names(ErrorRates) <- subj
   ## Transform into data frames
-  
   
   OmmRates.data <- data.frame(do.call(rbind,OmmRates))
   ErrorRates.data <- data.frame(do.call(rbind,ErrorRates))

@@ -63,10 +63,11 @@ editor_options:
 ```{r Packages and Libraries, message = FALSE, warning = FALSE, echo = FALSE}
 # installs packages if necessary - MUST locate packages before knitting
 .libPaths("./Packages")
-Packages <- c("ggplot2","dplyr","reshape",#"wesanderson",
+Packages <- c("ggplot2","dplyr","reshape","wesanderson",
               "BayesFactor",
               "kableExtra","rmatio","Rmisc",
-              "rmarkdown","data.table","devtools") # Slew of packages used here.
+              "rmarkdown","data.table","devtools",
+              "cowplot","dplyr","readr") # Slew of packages used here.
 
 # # Install CRAN packages, if necessary
 # if(sum(!Packages %in% rownames(installed.packages()))>=1){
@@ -86,6 +87,9 @@ numformat <- function(x, digits = 2) {
     ncode <- paste0("%.", digits, "f")
     sub("^(-?)0.", "\\1.", sprintf(ncode, x))
 }
+
+## Raincloud plot function
+source("./Packages/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
 
 # Install Git Packages, if necessary
 if(!"papaja" %in% rownames(installed.packages())) devtools::install_github("crsh/papaja")
@@ -200,14 +204,13 @@ The Cross-modal Attention task requires participants to respond to either the po
   
 ## 2.3. Data Extraction
 ### 2.3.1. Behaivoural Data
-  The extracted variables from the beahvioural data include mean and standard deviation of correct reaction times (RT), mean and standard deviation of erronous reaction times (RT~err~), percentage of errors of comission, percentage of omission errors. For each condition (i.e., No-pain vs Pain) these variables were extracted across the following groupings; Modality (Visual vs Auditory cues), Preparation (Cued vs Ambiguous trials), and Distraction (Present vs Absent distractors).
+  The extracted variables from the beahvioural data include mean and standard deviation of correct reaction times (RT), mean and standard deviation of erronous reaction times (RT~err~), percentage of errors of comission, and percentage of omission errors. For each condition (i.e., No-pain and Pain) these variables were extracted across the following groupings; Modality (Visual vs Auditory cues), Preparation (Cued vs Ambiguous trials), and Distraction (Present vs Absent distractors). 
   
 ### 3.3.2. EEG Data
 ```{r EEG summary}
 ## Calculate the summary stats of the EEG analysis. RE: trial counts, channel/component removal
 EEGPreProc <- list()
 # Read in data from .txt files
-EEGPreProc[["BadChan"]] <- list()
 
 ## Collate number of removed channels
 EEGPreProc[["BadChan"]][["np"]] <- lapply(Subjidx,
@@ -415,256 +418,293 @@ EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]] <- lapply(Subjidx,function(x
 
 EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]][[x]]))
 
-## Total Trials
-sum(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]][[1]],
-    EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]][[1]],
-    EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]][[1]])
+## Total Trials Removed
+EEGPreProc[["RejTrial"]][["Total"]] <- lapply(seq_along(Subjidx),
+                                              function(x)
+                                              sum(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]][[x]],
+                                              EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]][[x]],
+                                              EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]][[x]]))
 
-
-
+Perc_TrialsRemoved <- data.frame(Vis = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]])/120),
+                            Aud = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]])/120),
+                            Amb = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]])/60))
+## Compare Cue Types on the percentage of removed trials
+# format data
+TrialsRemoved_test <- reshape2::melt(Perc_TrialsRemoved)
+# Freq test
+TR_ANOVA <- aov(value ~ variable, data = TrialsRemoved_test)
+# Bayes test
+BF_TR_ANOVA <- BayesFactor::anovaBF(value ~ variable, data = TrialsRemoved_test)
 ```
-  An outline of the EEG pre-processing undertaken here is presented in Figure *X*. EEG data were first average referenced and high pass filtered at 1Hz using the *removeTrend* function. Line noise of 6Hz and its associated harmonics was removed using a notch filter before the *clean_artifacts* function was used to detect bad channels. Channels were marked for removal is there was noise greater than 4 standard deviations greater than the mean, 1/5th of the channel was flat, or correlations with other channels was lower than .8. This processed removed an average of `r round(mean(unlist(EEGPreProc$BadChan$Average)),0)` +/- `r round(sd(unlist(EEGPreProc$BadChan$Average)),0)` of channels. The results of this were visually inspected ad confirmed before data was subjected to ICA. Resulting components from the *run_ica* output was marked for removal with the the ICLabel algorthm, where compnents classifed greater than 75% eye, greater than 80% muscle, or greater than 90% heart, line, and channel were removed. Visual inspection confirmed the component removal and the ICA weights were saved for later referral.
-  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of `r round(mean(unlist(EEGPreProc$RejComp$Average)),0)` +/- `r round(sd(unlist(EEGPreProc$RejComp$Average)),0)` copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. EEGLABs extreme epoch noise detection using EEGLab's threshold & joint probability procedures was undertaken with the cut-off for amplitude set at 100uV **put in other stuff heree**. An average of `r round(mean(unlist(EEGPreProc$RejTrial$Average)),0)` +/- `r round(sd(unlist(EEGPreProc$RejTrial$Average)),0)` trials were removed using this procedure for each participant. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
-  An average of **XX** +/- trials remained for each participant. Visual and auditory cued trials made up XX% of these trials, matching the original paradigm setting of XX%. Time freqeucny transform was undertaken closely following the advice of Cohen (2014; *check refrence*). In short, Morelt wavelets were created at different frequency dependent widths. Across the 80 linearlly spaced frequency bins between 3 and 30Hz, wavelets were created with widths between 6 and 10 cycles. In other words, smaller width wavelets were used for slower frequencies and larger width wavelets were used for faster frequncies. This allowed for the investigation of multiple freqency bands (i.e., both Theta and Alpha) with approximately the same resolution. The output of this process was baselined using a decibel conversion to the time period -500 to -200ms pre-cue. ERPs to each cue were taken for the time period up to 1 second post cue. To control for high frequency noise, the data were low pass filtered at 30Hz for the ERP analyis. ERPs were baselined -200ms to cue onset (i.e., 0ms).
+  An outline of the EEG pre-processing undertaken here is presented in Figure *X*. EEG data were first average referenced and high pass filtered at 1Hz using the *removeTrend* function. Line noise of 6Hz and its associated harmonics was removed using a notch filter before the *clean_artifacts* function was used to detect bad channels. Channels were marked for removal is there was noise greater than 4 standard deviations greater than the mean, 1/5th of the channel was flat, or correlations with other channels was lower than .8. This processed removed an average of `r round(mean(unlist(EEGPreProc$BadChan$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$BadChan$Average)),2)` of channels. The results of this were visually inspected ad confirmed before data was subjected to ICA. Resulting components from the *run_ica* output was marked for removal with the the ICLabel algorthm, where compnents classifed greater than 75% eye, greater than 80% muscle, or greater than 90% heart, line, and channel were removed. Visual inspection confirmed the component removal and the ICA weights were saved for later referral.
+  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of `r round(mean(unlist(EEGPreProc$RejComp$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$RejComp$Average)),2)` copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. EEGLABs extreme epoch noise detection using EEGLab's threshold & joint probability procedures was undertaken with the cut-off for amplitude set at 100uV **put in other stuff heree**. An average of `r round(mean(unlist(EEGPreProc$RejTrial$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$RejTrial$Average)),2)` trials were removed using this procedure for each participant. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
+  An average of `r round(mean(unlist(EEGPreProc[["RejTrial"]][["Total"]])),2)` +/- `r round(sd(unlist(EEGPreProc[["RejTrial"]][["Total"]])),2)` trials were removed for each participant. There was no influence of Cue Type on the percentage of trials removed, as shown with a one-way ANOVA (`r papaja::apa_print.aov(TR_ANOVA)$full_result$variable`). An equivilant Bayesian ANOVA showed evidence for the null (BF~10~ = `r round(extractBF(BF_TR_ANOVA)[[1]],3)`).
+  Time freqeucny transform was undertaken closely following the advice of Cohen (2014; *check refrence*). In short, Morelt wavelets were created at different frequency dependent widths. Across the 80 linearlly spaced frequency bins between 3 and 30Hz, wavelets were created with widths between 6 and 10 cycles. In other words, smaller width wavelets were used for slower frequencies and larger width wavelets were used for faster frequncies. This allowed for the investigation of multiple freqency bands (i.e., both Theta and Alpha) with approximately the same resolution. The output of this process was baselined using a decibel conversion to the time period -500 to -200ms pre-cue. ERPs to each cue were taken for the time period up to 1 second post cue. To control for high frequency noise, the data were low pass filtered at 30Hz for the ERP analyis. ERPs were baselined -200ms to cue onset (i.e., 0ms).
   
 ## 2.4. Statistical Procedure
 ### 2.4.1. Behavioural Analysis
-**UPDATE**
-  The behavioural data of the C-MAT task was first assessed in the no pain condition. To explore the influence of Modality, Preparation, and Distraction, a large Bayesian ANOVA model comparing each of these was established. Models were run on correct reaction times. However, as error and omission rates were overall low and absent in some participants, these effects should be treated with caution.
-  To test the presence or absence of an effect we first examined the overall best fit model by examining Bayes Factors of each model respective to the null model. If interactions were present we also assessed the inclusion Bayes Factor, by controlling for simple effects of the interaction. The BF~inclusion~ described the evidence for the inclusion of a specific factor of the model. The influence of pain on the aformentioned effects is then assesed by adding a Pain (No-Pain vs. Pain) factor to the overall model.
+  The behavioural data of the C-MAT task was first assessed in the no pain condition. To explore the influence of Modality, Preparation, and Distraction, a large Bayesian ANOVA model comparing each of these was established. As error and omission rates were low overall and absent in some participants, these effects should be treated with caution. To test the presence or absence of an effect we first examined the overall best fit model by examining Bayes Factors of each model respective to the null model, which just includes a subject factor. If interactions are present we also assess the inclusion Bayes Factor, by controlling for matched models. The BF~inclusion~ describes the evidence for the inclusion of a specific factor (i.e., interaction) of the model, when controlling for the main effects. Any interactions were then explore using either one-way ANOVAs, or t-tests. The influence of pain on the aformentioned effects is then assesed by adding a Pain (No-Pain vs. Pain) factor to the overall model and exploring any possible interactions with the Pain factor using the aforementioned steps.
   
 ### 2.4.2. EEG Analysis
   
   
-# 3. Results  
+### 2.4.3. Determination of Effects
+  This study useses a joint methodology of frequentist and Bayesian tests. Bayesian tests are preferred and used where ever possible. However, as some common methodologies used in this literature have not been adapted to Bayesian, we use frequentist statistics alonside the Bayesian tests. For example, cluster based permutations are often used in the high dimensionality space of EEG, where multiple electrodes, across multiple subjects are compared across time-frequency space. The method itself helps control for multiple comparisons, which to date has not been as effectively and efficiently implimented in Bayes. 
+  
+  
+  *Another option is to do a linear model*
+  For the ANOVA models on behavioural data with the default priors of Rouder, et al., (2012) and a 'medium' r scale of sqrt(2)/2. For *t-tests, blah blah is used...*
+  Evidence cut-offs are used to assist in interpretation of Bayes factors. In line with Kass & Rafferty, (1995), we use the following cut-offs. A Bayes factor between 1/3 and 3 is considered ‘Equivocal’ (i.e., indicating more data are needed to obtain a clear outcome), between 1/20–1/3 and 3–20 is considered ‘Positive’, between 1/150–1/20 and 20–150 ‘Strong’, and Bayes factors < 1/150 and > 150 are considered ‘Very Strong’.
+
+# 3. Results 
+  Blah blah we first present yada yada
 ```{r Results Set-up, echo=FALSE}
+#### Plotting RT ####
 ## Create plots to observe possible outliers, effects, interactions etc
 
-## Colour-blind friendly pallatte
+## Colour-blind friendly pallatte - I use wesanderson for plotting, colour blind friendly for pubs
 cbbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7","#000000")
 
 ## We will plot four main comparisons on RT:
-# Modality (Auditory vs Visual targets)
-# Preparation (Cued-targets vs Ambiguous Target)
-# Interference/Distraction (Prescence vs Abscence of Targets)
-# Pain (Pain vs No-Pain conditions) - which will be compared across all of the above.
-if(!file.exists("Output/RT_Boxplots.pdf")){
-  source("Functions/RT_Plots.R")
+# Modality (Auditory vs Visual Targets)
+# Preparation (Cued-targets vs Ambiguous Target; i.e., CueType)
+# Interference/Distraction (Prescence vs Abscence of Targetsl; i.e., Distractor)
+# Pain (Pain vs No-Pain; ie., Condition) - Compared across all of the above.
+
+# source the function
+source('Functions/RT_RainPlots.R')
+
+# Change condition labels to plot better
+levels(Trialdata$Condition) <- c("No Pain","Pain")
+
+# Create list and loop through plots
+if(!file.exists("Output/RT_Rainplots.RData")){
+Plots <- list()
+RT_comp_xvals <- c("Target","CueType","Distractor","Condition")
+RT_comp_groupvals <- c("Accuracy","Target","CueType","Distractor","Condition")
+
+for (i in seq_along(RT_comp_xvals)){
+Plots[[RT_comp_xvals[i]]] <- lapply(RT_comp_groupvals,function(x) RT_RainPlot(data = Trialdata,
+                                                                      xval = RT_comp_xvals[i],
+                                                                      groupval = x))
+names(Plots[[RT_comp_xvals[i]]]) <- RT_comp_groupvals
 }
-tmp = load(file = "Output/RT_Plots.RData")
+save(Plots,file = "Output/RT_Rainplots.RData")
+
+}
+# Else we just load the data - much faster
+tmp = load(file = "Output/RT_Rainplots.RData")
 
 #### Error Rates Calclations ####
 
-# Create list of error rates splits of interest
+# Create list of error rates on splits of interest
 N_Trials <- list()
-N_Trials[["Condition"]] <- Trialdata %>% dplyr::group_by(PartID,Condition,Accuracy) %>%  dplyr::tally()
+N_Trials[["Condition"]] <-
+Trialdata %>% dplyr::group_by(PartID, Condition, Accuracy) %>% dplyr::tally() %>% dplyr::group_by(PartID,Condition) %>% dplyr::mutate(total = sum(n)) %>% dplyr::mutate(perc = (n/total)*100) %>% dplyr::select(-n,-total) %>% dplyr::filter(Accuracy!="Correct")
 
-N_Trials[["CueType"]] <- Trialdata %>% dplyr::group_by(PartID,CueType,Accuracy) %>%  dplyr::tally()
+N_Trials[["CueType"]] <-
+Trialdata %>% dplyr::group_by(PartID, CueType, Accuracy) %>% dplyr::tally() %>% dplyr::group_by(PartID,CueType) %>% dplyr::mutate(total = sum(n)) %>% dplyr::mutate(perc = (n/total)*100) %>% dplyr::select(-n,-total) %>% dplyr::filter(Accuracy!="Correct")
 
-N_Trials[["Distractor"]] <- Trialdata %>% dplyr::group_by(PartID,Distractor,Accuracy) %>%  dplyr::tally()
+N_Trials[["Distractor"]] <-
+Trialdata %>% dplyr::group_by(PartID, Distractor, Accuracy) %>% dplyr::tally() %>% dplyr::group_by(PartID,Distractor) %>% dplyr::mutate(total = sum(n)) %>% dplyr::mutate(perc = (n/total)*100) %>% dplyr::select(-n,-total) %>% dplyr::filter(Accuracy!="Correct")
 
-N_Trials[["Target"]] <- Trialdata %>% dplyr::group_by(PartID,Target,Accuracy) %>% dplyr::tally()
+N_Trials[["Target"]] <-
+Trialdata %>% dplyr::group_by(PartID, Target, Accuracy) %>% dplyr::tally() %>% dplyr::group_by(PartID,Target) %>% dplyr::mutate(total = sum(n)) %>% dplyr::mutate(perc = (n/total)*100) %>% dplyr::select(-n,-total) %>% dplyr::filter(Accuracy!="Correct")
 
-source('Functions/ErrRates.R')
+## Plot Errors and Omissions Data
+# Create list and loop through plots
+source('Functions/Error_RainPlots.R')
+if(!file.exists("Output/Errors_Rainplots.RData")){
+Error_comp_xvals <- "Accuracy"
+Error_comp_groupvals <- c("Target","CueType","Distractor","Condition")
 
-Errors_list <- list()
-for (i in seq_along(names(N_Trials))) {
-  Errors_list[[names(N_Trials)[[i]]]] <- ErrRates(
-    list = N_Trials,
-    sublist = names(N_Trials)[[i]],
-    sublist_levels = unique(N_Trials[[names(N_Trials)[[i]]]][[names(N_Trials)[[i]]]]),
-    subj = Subjidx
-  )
+Err_Plots <- lapply(Error_comp_groupvals, function(x)
+  Err_RainPlot(
+  data = N_Trials[[x]],
+  xval = "Accuracy",
+  groupval = x
+  ))
+  names(Err_Plots) <- Error_comp_groupvals
+  
+  save(Err_Plots, file = "Output/Errors_Rainplots.RData")
 }
 
-## Build Errors data.frame ##
-Errorsdata <-
-  data.frame(lapply(names(Errors_list), function(x)
-    data.frame(Errors_list[[x]][["Errors"]])))
-# Turns the length = 0 lists into NA and creates data.frame
-for (i in names(Errorsdata)){
-      Errorsdata[[i]] <- unlist(ifelse(sapply(Errorsdata[[i]], length) == 0, NA, Errorsdata[[i]]))
-}
-names(Errorsdata) <- c("NoPain","Pain",
-                       "AmbiguousCue","AuditoryCue","VisualCue",
-                       "DistractorAbsent","DistractorPresent",
-                       "AuditoryTarget","VisualTarget")
-# Build Misses data frame #
-Missdata   <-
-  data.frame(lapply(names(Errors_list), function(x)
-    data.frame(Errors_list[[x]][["Ommissions"]])))
+# Else we just load the data - much faster
+tmp = load(file = "Output/Errors_Rainplots.RData")
 
-# Turns the length = 0 lists into NA and creates data.frame
-for (i in names(Missdata)){
-      Missdata[[i]] <- unlist(ifelse(sapply(Missdata[[i]], length) == 0, NA, Missdata[[i]]))
-}
-names(Missdata) <- c("NoPain","Pain",
-                       "AmbiguousCue","AuditoryCue","VisualCue",
-                       "DistractorAbsent","DistractorPresent",
-                       "AuditoryTarget","VisualTarget")
-# Clean as we go
-rm(Errors_list)
-
-## Create SPSS/JASP ready dataframe
-# RT column with one column for each interaction of variables
-SPSSdata <-
+## Create SPSS/JASP ready dataframe for RT
+Programdata <-
   reshape2::dcast(
-    data = Trialdata %>% dplyr::filter(Accuracy != "Miss"),
+    data = Trialdata,
     formula = PartID ~ Condition + CueType + Target + Distractor + Accuracy,
     fun.aggregate = mean,
     value.var = "RT"
-  )
+)
+
 # Write to file
-write.csv(SPSSdata, file = "Output/SPSSdata.csv",
+write.csv(Programdata, file = "Output/Wide_RTdata.csv",
           row.names = F)
 
-# Error rates
-# Write to file
-SPSSdata <-
-  reshape2::dcast(
-    data = Errorsdata,
-    formula = PartID ~ Condition + CueType + Target + Distractor,
-    fun.aggregate = mean,
-    value.var = "ErrorRates"
-  )
-write.csv(SPSSdata, file = "Output/Error_SPSSdata.csv",
-          row.names = F)
+## Create SPSS/JASP ready dataframe for errors
+N_Trials[["CueType"]]$CueType <- paste(N_Trials[["CueType"]]$CueType,"Cue",sep="")
+N_Trials[["Condition"]]$Condition <- as.character(N_Trials[["Condition"]]$Condition)
+N_Trials[["Distractor"]]$Distractor <- as.character(N_Trials[["Distractor"]]$Distractor)
+N_Trials[["Target"]]$Target <- as.character(N_Trials[["Target"]]$Target)
 
-write.csv(Errorsdata, file = "Output/Errors_data.csv",
-          row.names = F)
-# Ommissions rates
-# Write to file
-SPSSdata <-
-  reshape2::dcast(
-    data = Errorsdata,
-    formula = PartID ~ Condition + CueType + Target + Distractor,
-    fun.aggregate = mean,
-    value.var = "MissRates"
-  )
-write.csv(SPSSdata, file = "Output/Miss_SPSSdata.csv",
-          row.names = F)
+for (i in seq_along(N_Trials)){
+  names(N_Trials[[i]]) <- c("PartID","Variable","Accuracy","Perc")
+}
 
-write.csv(Missdata, file = "Output/Miss_data.csv",
-          row.names = F)
+## Way too difficult way to create data frame
+Errorsdata <- data.frame(PartID = c(as.character(N_Trials$Condition$PartID),
+                                    as.character(N_Trials$CueType$PartID),
+                                    as.character(N_Trials$Distractor$PartID),
+                                    as.character(N_Trials$Target$PartID)),
+                         Variable = c(as.character(N_Trials$Condition$Variable),
+                                    as.character(N_Trials$CueType$Variable),
+                                    as.character(N_Trials$Distractor$Variable),
+                                    as.character(N_Trials$Target$Variable)),
+                         Accuracy = c(as.character(N_Trials$Condition$Accuracy),
+                                    as.character(N_Trials$CueType$Accuracy),
+                                    as.character(N_Trials$Distractor$Accuracy),
+                                    as.character(N_Trials$Target$Accuracy)),
+                         Perc = c(N_Trials$Condition$Perc,
+                                    N_Trials$CueType$Perc,
+                                    N_Trials$Distractor$Perc,
+                                    N_Trials$Target$Perc)
+                         )
+
+
+
 ```
 
 ## 3.1. Behavioural Results
 ```{r Table 1, echo=FALSE}
-T1mean <- list()
-# Mean RT
-T1mean[["All"]] <-
-  aggregate(RT ~ PartID + Condition + CueType + Target + Distractor + Accuracy,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["Modality"]] <- aggregate(RT ~ PartID + Target,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["Preparation"]] <- aggregate(RT ~ PartID + CueType,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["PrepTarget"]] <- aggregate(RT ~ PartID + CueType + Target,
-                                 data = Trialdata,
-                                 FUN = mean)
-T1mean[["Distraction"]] <- aggregate(RT ~ PartID + Distractor,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["DistractionTarget"]] <-
-  aggregate(RT ~ PartID + Distractor + Target,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["Condition"]] <- aggregate(RT ~ PartID + Condition,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["ConditionModality"]] <- aggregate(RT ~ PartID + Condition + Target,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["ConditionPreparation"]] <- aggregate(RT ~ PartID + Condition + CueType,
-            data = Trialdata,
-            FUN = mean)
-T1mean[["ConditionDistraction"]] <- aggregate(RT ~ PartID + Condition + Distractor,
-            data = Trialdata,
-            FUN = mean)
+## Create formatted summary table of Behavioural results to support plots and analysis
+VOI <- c("Target","CueType","Distractor")
+RT_means <- list()
+Error_means <- list()
 
-# Number of Trials for Error calcs
-NTrials <-
-  aggregate(TrialNum ~ PartID + Condition + CueType + Target + Distractor + Accuracy,
-            data = Trialdata,
-            FUN = length)
-names(NTrials)[length(NTrials)] <- "NTrials"
-# Create grouping variable to help calc percentages
-NTrials$levels <- interaction(NTrials$PartID,NTrials$Condition,NTrials$CueType,NTrials$Target,NTrials$Distractor,sep = ".")
+for (i in VOI){
+# Correct RT
+RT_means[["Correct"]][[i]] <- Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, get(i), Condition) %>%
+    dplyr::summarise(subjRT = mean(RT, na.rm = T)) %>%
+    dplyr::group_by(`get(i)`, Condition) %>% 
+    dplyr::summarise(RT = mean(subjRT, na.rm = T),
+                     SD = sd(subjRT, na.rm = T)) %>% 
+  dplyr::ungroup()
+names(RT_means[["Correct"]][[i]]) <- c("Variable", "Condition","RT","SD")
 
-ErrorRates <- list()
-for (i in unique(NTrials$levels)) {
-  dummy <- ((NTrials$NTrials[NTrials$levels == i &
-                            NTrials$Accuracy == "Error"] / sum(NTrials$NTrials[NTrials$levels == i])) * 100)
-  
-  ErrorRates[["ErrorRates"]][[i]] <-
-    unlist(ifelse(length(dummy) == 0, NA, dummy))
-  
-  dummy2 <- (NTrials$NTrials[NTrials$levels == i &
-                            NTrials$Accuracy == "Miss"] / sum(NTrials$NTrials[NTrials$levels == i]) * 100)
-  
-  ErrorRates[["MissRates"]][[i]] <-
-    unlist(ifelse(length(dummy2) == 0, NA, dummy2))
+# Error RT
+RT_means[["Error"]][[i]] <- Trialdata %>%
+    dplyr::filter(Accuracy == "Error") %>%
+    dplyr::group_by(PartID, get(i), Condition) %>%
+    dplyr::summarise(subjRT = mean(RT, na.rm = T)) %>%
+    dplyr::group_by(`get(i)`, Condition) %>% 
+    dplyr::summarise(RT = mean(subjRT, na.rm = T),
+                     SD = sd(subjRT, na.rm = T)) %>% 
+  dplyr::ungroup()
+names(RT_means[["Error"]][[i]]) <- c("Variable", "Condition","Error RT","SD")
+
+# Error Rates
+Error_means[["Error"]][[i]] <- Trialdata %>% 
+  dplyr::group_by(PartID, get(i), Accuracy, Condition) %>% 
+  dplyr::tally() %>% 
+  dplyr::group_by(PartID, `get(i)`, Condition) %>% 
+  dplyr::mutate(total = sum(n)) %>% 
+  dplyr::mutate(perc = (n /total) * 100) %>% 
+  dplyr::select(-n, -total) %>% 
+  dplyr::filter(Accuracy =="Error") %>% 
+  dplyr::group_by(`get(i)`,Condition) %>% 
+  dplyr::summarise(Errors = mean(perc, na.rm=T),
+                   SD = sd(perc,na.rm = T)) %>% 
+  dplyr::ungroup()
+names(Error_means[["Error"]][[i]]) <- c("Variable", "Condition","Errors (%)","SD")
+
+# Miss Rates
+Error_means[["Miss"]][[i]] <- Trialdata %>% 
+  dplyr::group_by(PartID, get(i), Accuracy, Condition) %>% 
+  dplyr::tally() %>% 
+  dplyr::group_by(PartID, `get(i)`, Condition) %>% 
+  dplyr::mutate(total = sum(n)) %>% 
+  dplyr::mutate(perc = (n /total) * 100) %>% 
+  dplyr::select(-n, -total) %>% 
+  dplyr::filter(Accuracy =="Miss") %>% 
+  dplyr::group_by(`get(i)`,Condition) %>% 
+  dplyr::summarise(Errors = mean(perc, na.rm=T),
+                   SD = sd(perc,na.rm = T)) %>% 
+  dplyr::ungroup()
+names(Error_means[["Miss"]][[i]]) <- c("Variable", "Condition","Omissions (%)","SD")
+
 }
-rm(dummy,dummy2)
 
-Errorsdata <- data.frame(ErrorRates)
-Errorsdata$levels <- rownames(Errorsdata)
-foo <- do.call(rbind,strsplit(Errorsdata$levels,split = "[.]"))
-colnames(foo) <- names(T1mean$All)[1:ncol(foo)]
-Errorsdata <- cbind(foo,Errorsdata) %>% select(-levels)
 
-T1err <- list()
-T1err[["Modality"]] <- 
-  aggregate(ErrorRates ~ PartID + Target,
-            data = Errorsdata,
-            FUN = mean)
-T1err[["Preparation"]] <-
-  aggregate(ErrorRates ~ PartID + CueType, 
-            data = Errorsdata, 
-            FUN = mean)
-T1err[["PrepTarget"]] <- aggregate(ErrorRates ~ PartID + CueType + Target,
-                                 data = Errorsdata,
-                                 FUN = mean)
-T1err[["Distraction"]] <-
-  aggregate(ErrorRates ~ PartID + Distractor,
-            data = Errorsdata,
-            FUN = mean)
-T1err[["DistractionTarget"]] <-
-  aggregate(ErrorRates ~ PartID + Distractor + Target,
-            data = Errorsdata,
-            FUN = mean)
-T1err[["Condition"]] <- 
-  aggregate(ErrorRates ~ PartID + Condition,
-            data = Errorsdata,
-            FUN = mean)
+# Format Table 1 - other option is to group RT, seperate to Errors/Omissions (table currently too big imo)
+Tab1_RT <- dplyr::bind_rows(RT_means$Correct,
+                      .id = "Effect")
+Tab1_RT <- cbind(RT_means$Correct[RT_means$Correct])
+Tab1_RTerr <- dplyr::bind_rows(RT_means$Error,
+                      .id = "Effect")
+Tab1_Err <- dplyr::bind_rows(Error_means$Error,
+                      .id = "Effect")
+Tab1_Miss <- dplyr::bind_rows(Error_means$Miss,
+                      .id = "Effect")
 
-T1omm <- list()
-T1omm[["Modality"]] <- 
-  aggregate(MissRates ~ PartID + Target,
-            data = Errorsdata,
-            FUN = mean)
-T1omm[["Preparation"]] <-
-  aggregate(MissRates ~ PartID + CueType, 
-            data = Errorsdata, 
-            FUN = mean)
-T1omm[["Distraction"]] <-
-  aggregate(MissRates ~ PartID + Distractor,
-            data = Errorsdata,
-            FUN = mean)
-T1omm[["DistractionTarget"]] <-
-  aggregate(MissRates ~ PartID + Distractor + Target,
-            data = Errorsdata,
-            FUN = mean)
-T1omm[["PrepTarget"]] <- aggregate(MissRates ~ PartID + CueType + Target,
-                                 data = Errorsdata,
-                                 FUN = mean)
-T1omm[["Condition"]] <- 
-  aggregate(MissRates ~ PartID + Condition,
-            data = Errorsdata,
-            FUN = mean)
+np_Tab1 <- cbind(Tab1_RT[Tab1_RT$Condition=="No Pain",],
+                 Tab1_RTerr[Tab1_RTerr$Condition=="No Pain",][c("Error RT", "SD")],
+                 Tab1_Err[Tab1_Err$Condition=="No Pain",][c("Errors (%)", "SD")],
+                 Tab1_Miss[Tab1_Miss$Condition=="No Pain",][c("Omissions (%)", "SD")]
+)
+np_Tab1$Condition <- NULL
+np_Tab1$Effect <- NULL
+                 
+p_Tab1 <- cbind(Tab1_RT[Tab1_RT$Condition=="Pain",],
+                 Tab1_RTerr[Tab1_RTerr$Condition=="Pain",][c("Error RT", "SD")],
+                 Tab1_Err[Tab1_Err$Condition=="Pain",][c("Errors (%)", "SD")],
+                 Tab1_Miss[Tab1_Miss$Condition=="Pain",][c("Omissions (%)", "SD")]
+)
+p_Tab1$Condition <- NULL
+p_Tab1$Effect <- NULL
+
+Table1 <- cbind(np_Tab1,p_Tab1)
+names(Table1) <-
+  c(
+  "",
+  "RT",
+  "SD",
+  "Error RT",
+  "SD",
+  "Errors (%)",
+  "SD",
+  "Omissions (%)",
+  "SD",
+  "Variable",
+  "RT",
+  "SD",
+  "Error RT",
+  "SD",
+  "Errors (%)",
+  "SD",
+  "Omissions (%)",
+  "SD"
+  )
+Table1$Variable <- NULL
+
+# Paste the SD with the RT in brackets? - round to 2 digits
+
+
+# Print Table 1
+# Column headers for Condition
+# Row Groupings for Modality, Cue Type, Distractor
+kable(Table1, caption = "Table 1. Behavoural Summary Stats",digits = 2) %>%
+  kable_styling("striped", full_width = F) %>%
+ add_header_above(c(" " = 1, "No Pain" = 8, "Pain" = 8)) %>% 
+  pack_rows("Modality", 1, 2) %>%
+  pack_rows("Cue Type", 3, 5) %>% 
+  pack_rows("Distractor",6, 7)
+
 ```
 
 ### 3.1.1. Modality Effects
@@ -718,23 +758,50 @@ Distraction effects showed little differences between the pain condition (`r rou
 Plots$Condition$Distraction
 ```
 
-## 3.1. Behavioural Results Models
+## 3.1. Behavioural Models
 ```{r RT Tests, eval=FALSE, include=FALSE}
 ## Just do this in JASP ##
 
-# ## Linear Models take longer than straight ANOVAs?
-# RTBayeslm_all <-
-#   BayesFactor::anovaBF(
-#     RT ~ Target * CueType * Condition + PartID,
-#     data = Trialdata[!is.na(Trialdata$RT),],
-#     whichRandom = "PartID",
-#     progress = T,
-#     iterations = 10
-# )
-# 
-# RTBayeslm_NullComparison <- head(RTBayeslm_all)/max(RTBayeslm_all)
-# ## See differences between most supported model
-# plot(RTBayeslm_NullComparison)
+## Linear Models take longer than straight ANOVAs?
+system.time(
+RTBayes_all <-
+  BayesFactor::anovaBF(
+    RT ~ Target * CueType * Condition + PartID,
+    data = Trialdata[!is.na(Trialdata$RT),],
+    whichRandom = "PartID",
+    progress = T,
+    iterations = 1000,
+    whichModels = "top"
+    ))
+
+
+system.time(
+RTBayes <-
+  BayesFactor::anovaBF(
+    RT ~ Target * CueType + PartID,
+    data = Trialdata[!is.na(Trialdata$RT),],
+    whichRandom = "PartID",
+    progress = T,
+    iterations = 10000,
+    whichModels = "top"
+
+    ))
+
+# 10 =    user  system elapsed 
+#       115.38    0.21  119.02 
+ 
+# 5 =    user  system elapsed 
+#      115.34    0.32  116.86 
+
+# Turn into bf_ format
+bf_model <- bayesfactor_models(RTBayes_all)
+bayestestR::bayesfactor_inclusion(bf_model,match_models = F)
+
+bayestestR::bf_inclusion(RTBayes_all)
+
+RTBayeslm_NullComparison <- head(RTBayeslm_all)/max(RTBayeslm_all)
+## See differences between most supported model
+plot(RTBayeslm_NullComparison)
 ```
 
 ```{r PAF Anal}
