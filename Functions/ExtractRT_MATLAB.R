@@ -1,13 +1,15 @@
-ExtractTrialData <- function(PartID,COND){
+ExtractTrialData <- function(PartID,COND,dataloc = "../Data/"){
 
 ## Code to extract RT values from MATLAB event structures
-
+if (file.exists(paste(dataloc,PartID,"/Behaviour/",
+                     paste(PartID,COND,sep = "_"),
+                     "_EventCodes.mat",sep = ""))){
 require(rmatio)
 require(dplyr)
 
 ## Import Data
 mat <-
-  rmatio::read.mat(paste("../Data/",PartID,"/Behavior/",
+  rmatio::read.mat(paste(dataloc,PartID,"/Behaviour/",
                          paste(PartID,COND,sep = "_"),
                          "_EventCodes.mat",sep = ""))
 
@@ -267,7 +269,7 @@ CTIlist <- list()
 for (i in seq_along(TrialList)) {
   CTIlist[[i]] <-
     (TrialList[[i]] %>% dplyr::filter(Trig %in% TOI$Target) %>% .$Lat) - (TrialList[[i]] %>% dplyr::filter(Trig %in% TOI$Stim) %>% .$Lat)
-  if (length(CTIlist[[i]]) > 1) {
+  if (length(CTIlist[[i]]) > 1 | length(CTIlist[[i]]) < 1) {
     CTIlist[[i]] <- NA
   }
 }
@@ -279,7 +281,7 @@ ITIlist <- list()
 for (i in 1:(length(TrialList)-1)) {
   ITIlist[[i]] <-
     (TrialList[[i+1]] %>% dplyr::filter(Trig %in% TOI$Stim) %>% .$Lat) - (TrialList[[i]] %>% dplyr::filter(Trig %in% TOI$Stim) %>% .$Lat)
-  if (length(ITIlist[[i]]) > 1) {
+  if (length(ITIlist[[i]]) > 1 | length(ITIlist[[i]]) < 1) {
     ITIlist[[i]] <- NA
   }
 }
@@ -297,12 +299,16 @@ Trialdata <- Trialdata %>% dplyr::select(PartID,TrialNum,CueType,
 
 #### Write Trialdata to file ####
 write.csv(Trialdata,row.names = F,
-          file = paste("../Data/",PartID,"/Behavior/",
+          file = paste(dataloc,PartID,"/Behaviour/",
                        paste(PartID,COND,sep = "_"),
                        "_TrialData.csv",sep = ""))
 
 #### Create Summary Plots ####
 return(Trialdata)
+}else{
+  Trialdata <- NA
+  return(Trialdata)
+}
 }
 
 

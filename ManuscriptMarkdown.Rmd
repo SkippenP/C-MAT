@@ -67,7 +67,7 @@ Packages <- c("ggplot2","dplyr","reshape","wesanderson",
               "BayesFactor",
               "kableExtra","rmatio","Rmisc",
               "rmarkdown","data.table","devtools",
-              "cowplot","dplyr","readr") # Slew of packages used here.
+              "cowplot","readr") # Slew of packages used here.
 
 # # Install CRAN packages, if necessary
 # if(sum(!Packages %in% rownames(installed.packages()))>=1){
@@ -98,6 +98,9 @@ if(!"papaja" %in% rownames(installed.packages())) devtools::install_github("crsh
 # References info
 papaja::r_refs(file = "r-references.bib")
 
+# Seed setting for Bayes
+set.seed(930129)
+
 # Knitting options
 knitr::opts_chunk$set(comment = NA)
 knitr::opts_chunk$set(message = FALSE)
@@ -111,81 +114,160 @@ knitr::opts_chunk$set(echo = TRUE, fig.pos= "h")
 # 2. Methods
 ```{r Methods Set-up, echo=FALSE}
 # As per the following document. Only CLP106 -> CLP 149 are useable
-PainCodes <- read.csv("EEGIdentity.csv")
+PainCodes <- read.csv("PainRatings.csv")
 PainCodes$Subjidx <- paste("CLP",PainCodes$Subjidx,sep = "")
 
-Subjidx <- dir(path = "Data/RejectData/",
+Subjidx <- dir(path = "Data/",
                pattern = "CLP*")
-# Remove CLP116_2 until we know what that's about.
-Subjidx <- Subjidx[Subjidx != "CLP116_2"]
 
-# Seperate into those with pain data and those without
-pain_Subjidx <- Subjidx[unlist(
-  lapply(Subjidx, function(px)
-    file.exists(
-      paste("Data/RejectData/", px, "/", px, "_p_BadChannels.txt",sep = "")
-    )))]
-
-# Reduce particpants down to finalised numbers
-PainCodes <- PainCodes[PainCodes$Subjidx %in% Subjidx,]
+# Remove CLP116 - Didn't finish
+Subjidx <- Subjidx[Subjidx != "CLP116"]
+# Remove CLP1107 - Odd Trigger codes 
+Subjidx <- Subjidx[Subjidx != "CLP107"]
+# Remove CLP130 - Odd trigger codes
+Subjidx <- Subjidx[Subjidx != "CLP130"]
 
 Conditions <- c("np","p")
 source('Functions/ExtractRT_MATLAB.R')
 
 ## Below code only runs the first time. If Output/Trial_list exsits it will simply load the data.
 if(!file.exists("Output/Trial_list.RData")){
-Trial.list <- list()
+Trial.list <- list(np = list(),
+                   p = list())
 ## Extract Trial.list
 for(px in seq_along(Subjidx)){
-  Trial.list[["np"]][[px]] <- ExtractTrialData(PartID = Subjidx[px],COND = "np")
+  Trial.list[["np"]][[px]] <- ExtractTrialData(PartID = Subjidx[px],
+                                               COND = "np",
+                                               dataloc = "Data/")
   
 }
 names(Trial.list[["np"]]) <- Subjidx
+Trial.list[["np"]] <- Trial.list[["np"]][!is.na(Trial.list[["np"]])]
 
-# N.B - CLP116 is missing pain data
-Subjidx_p <- Subjidx[-16]
-for (px in seq_along(Subjidx)) {
-  if (file.exists(paste(
-    "../Data/",
-    Subjidx[px],
-    "/Behaviour/",
-    paste(Subjidx[px], "p", sep = "_"),
-    "_EventCodes.mat",
-    sep = ""
-  ))) {
-    Trial.list[["p"]][[px]] <-
-      ExtractTrialData(PartID = Subjidx[px], COND = "p")
-  }
-  else {
-    Trial.list[["p"]][[px]] <- NA
-  }
+for(px in seq_along(Subjidx)){
+  Trial.list[["p"]][[px]] <- ExtractTrialData(PartID = Subjidx[px],
+                                               COND = "p",
+                                               dataloc = "Data/")
+  
 }
 names(Trial.list[["p"]]) <- Subjidx
+Trial.list[["p"]] <- Trial.list[["p"]][!is.na(Trial.list[["p"]])]
 
-## Remove CLP116 pain data
-Trial.list[["p"]][is.na(Trial.list[["p"]])] <- NULL
+save(Trial.list, file = "Output/Trial_list.RData")
+Trialdata <- rbind(data.table::rbindlist(Trial.list[["np"]]),
+                   data.table::rbindlist(Trial.list[["p"]]))
 
-save(Trial.list,file = "Output/Trial_list.RData")
+# Mark participants who recieved pain:
+Trialdata$Rec_pain <- 0
+Trialdata$Rec_pain[Trialdata$PartID %in% PainCodes$Subjidx] <- 1
 
-Trialdata <- rbind(data.table::rbindlist(Trial.list$np),
-                 data.table::rbindlist(Trial.list$p))
-write.csv(Trialdata,file = "Output/TrialData.csv",
+
+write.csv(Trialdata, file = "Output/TrialData.csv",
           row.names = F)
 }
 
 ## Load data
 tmp = load("Output/Trial_list.RData")
 Trialdata <- read.csv("Output/TrialData.csv")
+
+# Subset Participants from Trialdata
 Trialdata <- Trialdata[Trialdata$PartID %in% Subjidx,]
+Trialdata$PartID <- factor(Trialdata$PartID)
+rownames(Trialdata) <- seq(from = 1, to = nrow(Trialdata),by=1)
+```
+
+``` {r Sanity Checks}
+
+#### TODO Fix this section up. Make it presentable ####
+### We want to:
+# Find incorrect trigger codes, i.e., short/long CTI/ITIs and remove
+# Cut short RT ~<150ms
+# Cut long RT >1000ms?
+
+
+hist(Trialdata$RT, breaks = 100)
+hist(Trialdata$RT[Trialdata$RT<250], breaks = 100)
+
+table(Trialdata$PartID[Trialdata$RT<150])
+table(Trialdata$Condition[Trialdata$RT<150]) # Slight condition difference
+table(Trialdata$Accuracy[Trialdata$RT<150])
+
+# Long responses
+table(Trialdata$PartID[Trialdata$RT>800])
+table(Trialdata$Condition[Trialdata$RT>800])
+table(Trialdata$Accuracy[Trialdata$RT>800])
 
 ## check CTI and ITI values:
-hist(Trialdata$CTI)
-hist(Trialdata$ITI)
-table(Trialdata$PartID[Trialdata$ITI>4000]) # CLP114 and CLP124 might need a look into for long ITIs
+hist(Trialdata$CTI, breaks = 100)
+hist(Trialdata$CTI[Trialdata$CTI<700], breaks = 100)
+table(Trialdata$PartID[Trialdata$CTI<600]) # One short CIT. - Error
+ShortCTI <- list(,
+                 )
+
+
+# Remove it
+Trialdata <- Trialdata[-c(10271,12882),]
+
+hist(Trialdata$CTI[Trialdata$CTI>800], breaks = 100)
+table(Trialdata$PartID[Trialdata$CTI>850]) # One long CTI - Miss
+
+
+
+median(Trialdata$CTI, na.rm = T)
+min(Trialdata$CTI[Trialdata$CTI>500], na.rm = T)
+
+
+hist(Trialdata$ITI, breaks = 100)
+table(Trialdata$ITI)
+hist(Trialdata$ITI[Trialdata$ITI>2500], breaks = 100)
+hist(Trialdata$ITI[Trialdata$ITI<2000], breaks = 100)
+
+table(Trialdata$PartID[Trialdata$ITI>3000])
+table(Trialdata$PartID[Trialdata$ITI<1850])
+
+Trialdata <- Trialdata[-c(4823),]
+
+
+summary(Trialdata$ITI[Trialdata$ITI<3000])
+
+Trialdata$RT[Trialdata$RT<150] <- NA
+
+## Re-level the CueType data into cued and ambiguous
+levels(Trialdata$CueType) <- list("Ambiguous" = "Ambiguous", "Cued" = c("Auditory","Visual"))
+
+
+## Plot pain response
+painplots <- PainCodes %>% dplyr::filter(AveragePainRating >= 20) %>% dplyr::select(Subjidx,Start,contains("Break")) %>% 
+  tidyr::gather(Time,Pain,Start:Break5)
+painplots$Time <- factor(painplots$Time,levels = c("Start", "Break1", "Break2", "Break3", "Break4", "Break5"))
+
+painplots_summ <- Rmisc::summarySEwithin(
+  painplots,
+  measurevar = "Pain",
+  withinvars = "Time",
+  idvar = "Subjidx",
+  na.rm = T,
+  conf.interval = .95
+)
+
+ggplot(data = painplots,aes(x = Time,y = Pain,group = Subjidx,colour = Subjidx)) +
+  geom_point() + geom_line() +
+    stat_summary(aes(y = Pain,group=1), fun=mean, colour="red", lwd = 1, geom="line",group=1) +
+      # stat_summary(aes(y = Pain,group=1),fun.data = mean_se,colour="red", lwd = 1,
+      #            geom = "errorbar")+
+  theme_classic() +
+  theme(legend.position = 'none') +
+  labs(x = "Time Points",
+       y = "Pain Rating (%)") + 
+    scale_colour_grey()
+
 
 ## Calculate summary variables and store in data frame
 source('Functions/MethodsList.R')
 Summdata <- MethodsList(Trialdata) # Can ignore warnings - RE: mean RT for miss trials/SD for 2 trials total
+# Mark participants who recieved pain:
+Summdata$Rec_pain <- 0
+Summdata$Rec_pain[Summdata$PartID %in% PainCodes$Subjidx] <- 1
 ```
 
 ## 2.1. Participants
@@ -197,11 +279,14 @@ Summdata <- MethodsList(Trialdata) # Can ignore warnings - RE: mean RT for miss 
 
 The Cross-modal Attention task requires participants to respond to either the position of a visual target or the pitch of an auditory target. Targets can appear simultaneously and so participants are presented with a cue to indicate the correct target in the upcoming trial. This version of the task consisted of three types of cues. Cues consisted of *Insert what cues looked like* presented on screen for *How long were cues presented?*. Cue *one* indicated the participant should respond to the position of the visual target. Cue *two* indicated that participants should respond to the pitch of the auditory target. These two cues occurred on `r round((1-(table(Trialdata$CueType)[[1]]/sum(table(Trialdata$CueType))))/2,1)*100`% of trials each. On the remaining `r round((table(Trialdata$CueType)[[1]]/sum(table(Trialdata$CueType))),1)*100`% of trials, participants received an ambiguous cue, which gave no information about the upcoming target. On these trials only one target was presented. Equal ratios of auditory and visual targets followed ambiguous cues (*I'm guessing this is true?*).
 
-  Cues were displayed for 250ms and targets for 60ms [*Please confirm this is correct. Trigger codes did not specify exactly*]. The cue to target interval (CIT) jittered between `r round(min(Trialdata$CTI,na.rm=T),0)`-`r round(max(Trialdata$CTI,na.rm=T),0)` in steps of **XXX** (*Values for this change with participants. Some have maxes of ~800ms and min of ~700ms. Others (N = 3) have max ~1500 and min ~1400* **I beleive I have fixed this with removal of some px**). Each trial lasted approximately `r round(mean(Trialdata %>% group_by(PartID) %>% summarise(meanITI = mean(ITI,na.rm=T)) %>% .$meanITI),0)`, with a jitter of **XXX**.
+  Cues were displayed for 250ms and targets for 60ms [*Please confirm this is correct. Trigger codes did not specify exactly*]. The cue to target interval (CIT) jittered between `r min(Trialdata$CTI[Trialdata$CTI>300],na.rm = T)`-`r max(Trialdata$CTI[Trialdata$CTI<1400],na.rm = T)` in steps of **XXX** (*Values for this change with participants. Some have maxes of ~800ms and min of ~700ms. Others have max ~1500 and min ~200*). Each trial lasted an average of `r round(mean(Trialdata %>% group_by(PartID) %>% summarise(meanITI = mean(ITI,na.rm=T)) %>% .$meanITI),0)`ms.
 
 ### 2.2.2. EEG Recording
   Participants completed the aforementioned task with concurent EEG recording using a **XXXX** system, fitted to the standard 10-20 system. EEG was sampled at 500Hz and referenced to referenced to the Afz electrode. Peripheral recordings of galvantic skin conductance, heart rate, and respiration were taken.
   
+### 2.2.3. Heat Pain
+  Pain was delivered
+
 ## 2.3. Data Extraction
 ### 2.3.1. Behaivoural Data
   The extracted variables from the beahvioural data include mean and standard deviation of correct reaction times (RT), mean and standard deviation of erronous reaction times (RT~err~), percentage of errors of comission, and percentage of omission errors. For each condition (i.e., No-pain and Pain) these variables were extracted across the following groupings; Modality (Visual vs Auditory cues), Preparation (Cued vs Ambiguous trials), and Distraction (Present vs Absent distractors). 
@@ -217,8 +302,8 @@ EEGPreProc[["BadChan"]][["np"]] <- lapply(Subjidx,
                                           function(px)
                                             nrow(
                                               read.table(
-                                                paste("Data/RejectData/",
-                                                      px, "/",
+                                                paste("Data/",
+                                                      px, "/Stats/",
                                                       px,
                                                       "_np_BadChannels.txt",
                                                       sep = ""),
@@ -230,22 +315,22 @@ EEGPreProc[["BadChan"]][["np"]] <- lapply(Subjidx,
 
 names(EEGPreProc[["BadChan"]][["np"]]) <- Subjidx
 
-EEGPreProc[["BadChan"]][["p"]] <- lapply(pain_Subjidx,
+EEGPreProc[["BadChan"]][["p"]] <- lapply(Subjidx,
                                          function(px)
                                            nrow(
                                              read.table(
-                                               paste("Data/RejectData/",
-                                                     px, "/",
-                                                     px,
-                                                     "_p_BadChannels.txt",
-                                                     sep = ""),
+                                               paste("Data/",
+                                                      px, "/Stats/",
+                                                      px,
+                                                      "_p_BadChannels.txt",
+                                                      sep = ""),
                                                row.names = NULL,
                                                quote = "\"",
                                                comment.char = ""
                                              )
                                            ))
 
-names(EEGPreProc[["BadChan"]][["p"]]) <- pain_Subjidx
+names(EEGPreProc[["BadChan"]][["p"]]) <- Subjidx
 
 # Both conditions together
 EEGPreProc[["BadChan"]][["Both"]] <- setNames(mapply(c, EEGPreProc[["BadChan"]][["np"]][Subjidx], EEGPreProc[["BadChan"]][["p"]][Subjidx]), Subjidx)
@@ -258,8 +343,8 @@ EEGPreProc[["RejComp"]][["np"]] <- lapply(Subjidx,
                                           function(px)
                                             nrow(
                                               read.table(
-                                                paste("Data/RejectData/",
-                                                      px, "/",
+                                                paste("Data/",
+                                                      px, "/Stats/",
                                                       px,
                                                       "_np_RejectedComps.txt",
                                                       sep = ""),
@@ -271,22 +356,22 @@ EEGPreProc[["RejComp"]][["np"]] <- lapply(Subjidx,
 
 names(EEGPreProc[["RejComp"]][["np"]]) <- Subjidx
 
-EEGPreProc[["RejComp"]][["p"]] <- lapply(pain_Subjidx,
+EEGPreProc[["RejComp"]][["p"]] <- lapply(Subjidx,
                                          function(px)
                                            nrow(
                                              read.table(
-                                               paste("Data/RejectData/",
-                                                     px, "/",
-                                                     px,
-                                                     "_p_RejectedComps.txt",
-                                                     sep = ""),
+                                                paste("Data/",
+                                                      px, "/Stats/",
+                                                      px,
+                                                      "_p_RejectedComps.txt",
+                                                      sep = ""),
                                                row.names = NULL,
                                                quote = "\"",
                                                comment.char = ""
                                              )
                                            ))
 
-names(EEGPreProc[["RejComp"]][["p"]]) <- pain_Subjidx
+names(EEGPreProc[["RejComp"]][["p"]]) <- Subjidx
 
 # Both conditions together
 EEGPreProc[["RejComp"]][["Both"]] <- setNames(mapply(c, EEGPreProc[["RejComp"]][["np"]][Subjidx], EEGPreProc[["RejComp"]][["p"]][Subjidx]), Subjidx)
@@ -294,151 +379,152 @@ EEGPreProc[["RejComp"]][["Both"]] <- setNames(mapply(c, EEGPreProc[["RejComp"]][
 # Both conditions averaged
 EEGPreProc[["RejComp"]][["Average"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejComp"]][["Both"]][[x]])) 
 
-## Summarise number of removed trials
-EEGPreProc[["RejTrial"]][["np"]][["Visual"]] <- lapply(Subjidx,
-                                                       function(px)
-                                                         read.table(
-                                                           paste(
-                                                             "Data/RejectData/",
-                                                             px,
-                                                             "/",
-                                                             px,
-                                                             "_np_RF_Proc_RejTrials.txt",
-                                                             sep = ""
-                                                           ),
-                                                           row.names = NULL,
-                                                           quote = "\"",
-                                                           comment.char = ""
-                                                         )[[1, 1]])
-
-names(EEGPreProc[["RejTrial"]][["np"]][["Visual"]]) <- Subjidx
-
-EEGPreProc[["RejTrial"]][["np"]][["Auditory"]] <- lapply(Subjidx,
-                                                       function(px)
-                                                         read.table(
-                                                           paste(
-                                                             "Data/RejectData/",
-                                                             px,
-                                                             "/",
-                                                             px,
-                                                             "_np_RF_Proc_RejTrials.txt",
-                                                             sep = ""
-                                                           ),
-                                                           row.names = NULL,
-                                                           quote = "\"",
-                                                           comment.char = ""
-                                                         )[[2, 1]])
-
-names(EEGPreProc[["RejTrial"]][["np"]][["Auditory"]]) <- Subjidx
-
-EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]] <- lapply(Subjidx,
-                                                       function(px)
-                                                         read.table(
-                                                           paste(
-                                                             "Data/RejectData/",
-                                                             px,
-                                                             "/",
-                                                             px,
-                                                             "_np_RF_Proc_RejTrials.txt",
-                                                             sep = ""
-                                                           ),
-                                                           row.names = NULL,
-                                                           quote = "\"",
-                                                           comment.char = ""
-                                                         )[[3, 1]])
-
-names(EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]]) <- Subjidx
-
-
-EEGPreProc[["RejTrial"]][["p"]][["Visual"]] <- lapply(pain_Subjidx,
-                                                       function(px)
-                                                         read.table(
-                                                           paste(
-                                                             "Data/RejectData/",
-                                                             px,
-                                                             "/",
-                                                             px,
-                                                             "_p_RF_Proc_RejTrials.txt",
-                                                             sep = ""
-                                                           ),
-                                                           row.names = NULL,
-                                                           quote = "\"",
-                                                           comment.char = ""
-                                                         )[[1, 1]])
-
-names(EEGPreProc[["RejTrial"]][["p"]][["Visual"]]) <- pain_Subjidx
-
-EEGPreProc[["RejTrial"]][["p"]][["Auditory"]] <- lapply(pain_Subjidx,
-                                                       function(px)
-                                                         read.table(
-                                                           paste(
-                                                             "Data/RejectData/",
-                                                             px,
-                                                             "/",
-                                                             px,
-                                                             "_p_RF_Proc_RejTrials.txt",
-                                                             sep = ""
-                                                           ),
-                                                           row.names = NULL,
-                                                           quote = "\"",
-                                                           comment.char = ""
-                                                         )[[2, 1]])
-
-names(EEGPreProc[["RejTrial"]][["p"]][["Auditory"]]) <- pain_Subjidx
-
-EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]] <- lapply(pain_Subjidx,
-                                                       function(px)
-                                                         read.table(
-                                                           paste(
-                                                             "Data/RejectData/",
-                                                             px,
-                                                             "/",
-                                                             px,
-                                                             "_p_RF_Proc_RejTrials.txt",
-                                                             sep = ""
-                                                           ),
-                                                           row.names = NULL,
-                                                           quote = "\"",
-                                                           comment.char = ""
-                                                         )[[3, 1]])
-
-names(EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]]) <- pain_Subjidx
-
-# Both conditions together
-EEGPreProc[["RejTrial"]][["Both"]][["Visual"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Visual"]][Subjidx],                                                       EEGPreProc[["RejTrial"]][["p"]][["Visual"]][Subjidx]), Subjidx)
-
-EEGPreProc[["RejTrial"]][["Both"]][["Auditory"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Auditory"]][Subjidx], EEGPreProc[["RejTrial"]][["p"]][["Auditory"]][Subjidx]), Subjidx)
-
-EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]][Subjidx], EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]][Subjidx]), Subjidx)
-
-# Both conditions averaged
-EEGPreProc[["RejTrial"]][["Average"]][["Visual"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Visual"]][[x]]))
-
-EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Auditory"]][[x]]))
-
-EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]][[x]]))
-
-## Total Trials Removed
-EEGPreProc[["RejTrial"]][["Total"]] <- lapply(seq_along(Subjidx),
-                                              function(x)
-                                              sum(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]][[x]],
-                                              EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]][[x]],
-                                              EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]][[x]]))
-
-Perc_TrialsRemoved <- data.frame(Vis = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]])/120),
-                            Aud = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]])/120),
-                            Amb = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]])/60))
-## Compare Cue Types on the percentage of removed trials
-# format data
-TrialsRemoved_test <- reshape2::melt(Perc_TrialsRemoved)
-# Freq test
-TR_ANOVA <- aov(value ~ variable, data = TrialsRemoved_test)
-# Bayes test
-BF_TR_ANOVA <- BayesFactor::anovaBF(value ~ variable, data = TrialsRemoved_test)
+## Summarise number of removed trials - Removed from current pipeline
+# EEGPreProc[["RejTrial"]][["np"]][["Visual"]] <- lapply(Subjidx,
+#                                                        function(px)
+#                                                          read.table(
+#                                                            paste(
+#                                                              "Data/RejectData/",
+#                                                              px,
+#                                                              "/",
+#                                                              px,
+#                                                              "_np_RF_Proc_RejTrials.txt",
+#                                                              sep = ""
+#                                                            ),
+#                                                            row.names = NULL,
+#                                                            quote = "\"",
+#                                                            comment.char = ""
+#                                                          )[[1, 1]])
+# 
+# names(EEGPreProc[["RejTrial"]][["np"]][["Visual"]]) <- Subjidx
+# 
+# EEGPreProc[["RejTrial"]][["np"]][["Auditory"]] <- lapply(Subjidx,
+#                                                        function(px)
+#                                                          read.table(
+#                                                            paste(
+#                                                              "Data/RejectData/",
+#                                                              px,
+#                                                              "/",
+#                                                              px,
+#                                                              "_np_RF_Proc_RejTrials.txt",
+#                                                              sep = ""
+#                                                            ),
+#                                                            row.names = NULL,
+#                                                            quote = "\"",
+#                                                            comment.char = ""
+#                                                          )[[2, 1]])
+# 
+# names(EEGPreProc[["RejTrial"]][["np"]][["Auditory"]]) <- Subjidx
+# 
+# EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]] <- lapply(Subjidx,
+#                                                        function(px)
+#                                                          read.table(
+#                                                            paste(
+#                                                              "Data/RejectData/",
+#                                                              px,
+#                                                              "/",
+#                                                              px,
+#                                                              "_np_RF_Proc_RejTrials.txt",
+#                                                              sep = ""
+#                                                            ),
+#                                                            row.names = NULL,
+#                                                            quote = "\"",
+#                                                            comment.char = ""
+#                                                          )[[3, 1]])
+# 
+# names(EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]]) <- Subjidx
+# 
+# 
+# EEGPreProc[["RejTrial"]][["p"]][["Visual"]] <- lapply(pain_Subjidx,
+#                                                        function(px)
+#                                                          read.table(
+#                                                            paste(
+#                                                              "Data/RejectData/",
+#                                                              px,
+#                                                              "/",
+#                                                              px,
+#                                                              "_p_RF_Proc_RejTrials.txt",
+#                                                              sep = ""
+#                                                            ),
+#                                                            row.names = NULL,
+#                                                            quote = "\"",
+#                                                            comment.char = ""
+#                                                          )[[1, 1]])
+# 
+# names(EEGPreProc[["RejTrial"]][["p"]][["Visual"]]) <- pain_Subjidx
+# 
+# EEGPreProc[["RejTrial"]][["p"]][["Auditory"]] <- lapply(pain_Subjidx,
+#                                                        function(px)
+#                                                          read.table(
+#                                                            paste(
+#                                                              "Data/RejectData/",
+#                                                              px,
+#                                                              "/",
+#                                                              px,
+#                                                              "_p_RF_Proc_RejTrials.txt",
+#                                                              sep = ""
+#                                                            ),
+#                                                            row.names = NULL,
+#                                                            quote = "\"",
+#                                                            comment.char = ""
+#                                                          )[[2, 1]])
+# 
+# names(EEGPreProc[["RejTrial"]][["p"]][["Auditory"]]) <- pain_Subjidx
+# 
+# EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]] <- lapply(pain_Subjidx,
+#                                                        function(px)
+#                                                          read.table(
+#                                                            paste(
+#                                                              "Data/RejectData/",
+#                                                              px,
+#                                                              "/",
+#                                                              px,
+#                                                              "_p_RF_Proc_RejTrials.txt",
+#                                                              sep = ""
+#                                                            ),
+#                                                            row.names = NULL,
+#                                                            quote = "\"",
+#                                                            comment.char = ""
+#                                                          )[[3, 1]])
+# 
+# names(EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]]) <- pain_Subjidx
+# 
+# # Both conditions together
+# EEGPreProc[["RejTrial"]][["Both"]][["Visual"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Visual"]][Subjidx],                                                       EEGPreProc[["RejTrial"]][["p"]][["Visual"]][Subjidx]), Subjidx)
+# 
+# EEGPreProc[["RejTrial"]][["Both"]][["Auditory"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Auditory"]][Subjidx], EEGPreProc[["RejTrial"]][["p"]][["Auditory"]][Subjidx]), Subjidx)
+# 
+# EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]] <- setNames(mapply(c, EEGPreProc[["RejTrial"]][["np"]][["Ambiguous"]][Subjidx], EEGPreProc[["RejTrial"]][["p"]][["Ambiguous"]][Subjidx]), Subjidx)
+# 
+# # Both conditions averaged
+# EEGPreProc[["RejTrial"]][["Average"]][["Visual"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Visual"]][[x]]))
+# 
+# EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Auditory"]][[x]]))
+# 
+# EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]] <- lapply(Subjidx,function(x) mean(EEGPreProc[["RejTrial"]][["Both"]][["Ambiguous"]][[x]]))
+# 
+# ## Total Trials Removed
+# EEGPreProc[["RejTrial"]][["Total"]] <- lapply(seq_along(Subjidx),
+#                                               function(x)
+#                                               sum(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]][[x]],
+#                                               EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]][[x]],
+#                                               EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]][[x]]))
+# 
+# Perc_TrialsRemoved <- data.frame(Vis = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Visual"]])/120),
+#                             Aud = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Auditory"]])/120),
+#                             Amb = (unlist(EEGPreProc[["RejTrial"]][["Average"]][["Ambiguous"]])/60))
+# ## Compare Cue Types on the percentage of removed trials
+# # format data
+# TrialsRemoved_test <- reshape2::melt(Perc_TrialsRemoved)
+# # Freq test
+# TR_ANOVA <- aov(value ~ variable, data = TrialsRemoved_test)
+# # Bayes test
+# BF_TR_ANOVA <- BayesFactor::anovaBF(value ~ variable, data = TrialsRemoved_test)
 ```
+  
   An outline of the EEG pre-processing undertaken here is presented in Figure *X*. EEG data were first average referenced and high pass filtered at 1Hz using the *removeTrend* function. Line noise of 6Hz and its associated harmonics was removed using a notch filter before the *clean_artifacts* function was used to detect bad channels. Channels were marked for removal is there was noise greater than 4 standard deviations greater than the mean, 1/5th of the channel was flat, or correlations with other channels was lower than .8. This processed removed an average of `r round(mean(unlist(EEGPreProc$BadChan$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$BadChan$Average)),2)` of channels. The results of this were visually inspected ad confirmed before data was subjected to ICA. Resulting components from the *run_ica* output was marked for removal with the the ICLabel algorthm, where compnents classifed greater than 75% eye, greater than 80% muscle, or greater than 90% heart, line, and channel were removed. Visual inspection confirmed the component removal and the ICA weights were saved for later referral.
-  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of `r round(mean(unlist(EEGPreProc$RejComp$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$RejComp$Average)),2)` copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. EEGLABs extreme epoch noise detection using EEGLab's threshold & joint probability procedures was undertaken with the cut-off for amplitude set at 100uV **put in other stuff heree**. An average of `r round(mean(unlist(EEGPreProc$RejTrial$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$RejTrial$Average)),2)` trials were removed using this procedure for each participant. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
-  An average of `r round(mean(unlist(EEGPreProc[["RejTrial"]][["Total"]])),2)` +/- `r round(sd(unlist(EEGPreProc[["RejTrial"]][["Total"]])),2)` trials were removed for each participant. There was no influence of Cue Type on the percentage of trials removed, as shown with a one-way ANOVA (`r papaja::apa_print.aov(TR_ANOVA)$full_result$variable`). An equivilant Bayesian ANOVA showed evidence for the null (BF~10~ = `r round(extractBF(BF_TR_ANOVA)[[1]],3)`).
+  The final EEG data set was high pass filtered at 0.1Hz. Bad channels were removed and ICA weights were added to the data and bad components removed. An average of `r round(mean(unlist(EEGPreProc$RejComp$Average)),2)` +/- `r round(sd(unlist(EEGPreProc$RejComp$Average)),2)` copmonents were removed for each participant. Channels were then interpolated using *pop_interp* and data epoched 1.5s before the cue to 2.5s post-cue, for each cue seperately. Lastly, data were current source density transformed useing Fieldtrips *ft_scalpcurrentdensity* using the spline method.
+  <!-- An average of `r round(mean(unlist(EEGPreProc[["RejTrial"]][["Total"]])),2)` +/- `r round(sd(unlist(EEGPreProc[["RejTrial"]][["Total"]])),2)` trials were removed for each participant. There was no influence of Cue Type on the percentage of trials removed, as shown with a one-way ANOVA (`r papaja::apa_print.aov(TR_ANOVA)$full_result$variable`). An equivilant Bayesian ANOVA showed evidence for the null (BF~10~ = `r round(extractBF(BF_TR_ANOVA)[[1]],3)`). -->
   Time freqeucny transform was undertaken closely following the advice of Cohen (2014; *check refrence*). In short, Morelt wavelets were created at different frequency dependent widths. Across the 80 linearlly spaced frequency bins between 3 and 30Hz, wavelets were created with widths between 6 and 10 cycles. In other words, smaller width wavelets were used for slower frequencies and larger width wavelets were used for faster frequncies. This allowed for the investigation of multiple freqency bands (i.e., both Theta and Alpha) with approximately the same resolution. The output of this process was baselined using a decibel conversion to the time period -500 to -200ms pre-cue. ERPs to each cue were taken for the time period up to 1 second post cue. To control for high frequency noise, the data were low pass filtered at 30Hz for the ERP analyis. ERPs were baselined -200ms to cue onset (i.e., 0ms).
   
 ## 2.4. Statistical Procedure
@@ -480,8 +566,8 @@ levels(Trialdata$Condition) <- c("No Pain","Pain")
 # Create list and loop through plots
 if(!file.exists("Output/RT_Rainplots.RData")){
 Plots <- list()
-RT_comp_xvals <- c("Target","CueType","Distractor","Condition")
-RT_comp_groupvals <- c("Accuracy","Target","CueType","Distractor","Condition")
+RT_comp_xvals <- c("Target","CueType","Distractor")
+RT_comp_groupvals <- c("Accuracy","Target","CueType","Distractor")
 
 for (i in seq_along(RT_comp_xvals)){
 Plots[[RT_comp_xvals[i]]] <- lapply(RT_comp_groupvals,function(x) RT_RainPlot(data = Trialdata,
@@ -489,6 +575,14 @@ Plots[[RT_comp_xvals[i]]] <- lapply(RT_comp_groupvals,function(x) RT_RainPlot(da
                                                                       groupval = x))
 names(Plots[[RT_comp_xvals[i]]]) <- RT_comp_groupvals
 }
+
+
+Plots[[RT_comp_xvals[i]]] <- lapply(RT_comp_groupvals,function(x) RT_RainPlot(data = Trialdata[Trialdata$Rec_pain==1,],
+                                                                      xval = "Condition",
+                                                                      groupval = x))
+names(Plots[[RT_comp_xvals[i]]]) <- RT_comp_groupvals
+
+
 save(Plots,file = "Output/RT_Rainplots.RData")
 
 }
@@ -516,7 +610,7 @@ Trialdata %>% dplyr::group_by(PartID, Target, Accuracy) %>% dplyr::tally() %>% d
 source('Functions/Error_RainPlots.R')
 if(!file.exists("Output/Errors_Rainplots.RData")){
 Error_comp_xvals <- "Accuracy"
-Error_comp_groupvals <- c("Target","CueType","Distractor","Condition")
+Error_comp_groupvals <- c("Target","CueType","Distractor")
 
 Err_Plots <- lapply(Error_comp_groupvals, function(x)
   Err_RainPlot(
@@ -525,6 +619,13 @@ Err_Plots <- lapply(Error_comp_groupvals, function(x)
   groupval = x
   ))
   names(Err_Plots) <- Error_comp_groupvals
+  
+Err_Plots[["Condition"]] <- lapply(Error_comp_groupvals, function(x)
+  Err_RainPlot(
+  data = N_Trials[[x]][N_Trials[[x]]$PartID %in% PainCodes$Subjidx,],
+  xval = "Accuracy",
+  groupval = x
+  ))
   
   save(Err_Plots, file = "Output/Errors_Rainplots.RData")
 }
@@ -535,7 +636,7 @@ tmp = load(file = "Output/Errors_Rainplots.RData")
 ## Create SPSS/JASP ready dataframe for RT
 Programdata <-
   reshape2::dcast(
-    data = Trialdata,
+    data = Trialdata %>% dplyr::filter(Accuracy!="Miss"),
     formula = PartID ~ Condition + CueType + Target + Distractor + Accuracy,
     fun.aggregate = mean,
     value.var = "RT"
@@ -546,39 +647,26 @@ write.csv(Programdata, file = "Output/Wide_RTdata.csv",
           row.names = F)
 
 ## Create SPSS/JASP ready dataframe for errors
-N_Trials[["CueType"]]$CueType <- paste(N_Trials[["CueType"]]$CueType,"Cue",sep="")
-N_Trials[["Condition"]]$Condition <- as.character(N_Trials[["Condition"]]$Condition)
-N_Trials[["Distractor"]]$Distractor <- as.character(N_Trials[["Distractor"]]$Distractor)
-N_Trials[["Target"]]$Target <- as.character(N_Trials[["Target"]]$Target)
+# Errors
+totalErrors <- Trialdata %>% dplyr::group_by(PartID, Condition, CueType, Target, Distractor, Accuracy) %>% dplyr::tally() %>% dplyr::group_by(PartID, Condition, CueType, Target, Distractor) %>% dplyr::mutate(total = sum(n)) %>% dplyr::mutate(perc = (n/total)*100) %>% dplyr::select(-n,-total) %>% dplyr::filter(Accuracy!="Correct")
 
-for (i in seq_along(N_Trials)){
-  names(N_Trials[[i]]) <- c("PartID","Variable","Accuracy","Perc")
-}
+ProgramdataErr <-
+  reshape2::dcast(
+    data = totalErrors,
+    formula = PartID ~ Condition + CueType + Target + Distractor + Accuracy,
+    fun.aggregate = mean,
+    value.var = "perc"
+)
 
-## Way too difficult way to create data frame
-Errorsdata <- data.frame(PartID = c(as.character(N_Trials$Condition$PartID),
-                                    as.character(N_Trials$CueType$PartID),
-                                    as.character(N_Trials$Distractor$PartID),
-                                    as.character(N_Trials$Target$PartID)),
-                         Variable = c(as.character(N_Trials$Condition$Variable),
-                                    as.character(N_Trials$CueType$Variable),
-                                    as.character(N_Trials$Distractor$Variable),
-                                    as.character(N_Trials$Target$Variable)),
-                         Accuracy = c(as.character(N_Trials$Condition$Accuracy),
-                                    as.character(N_Trials$CueType$Accuracy),
-                                    as.character(N_Trials$Distractor$Accuracy),
-                                    as.character(N_Trials$Target$Accuracy)),
-                         Perc = c(N_Trials$Condition$Perc,
-                                    N_Trials$CueType$Perc,
-                                    N_Trials$Distractor$Perc,
-                                    N_Trials$Target$Perc)
-                         )
-
-
+# Write to file
+write.csv(ProgramdataErr, file = "Output/Wide_Errdata.csv",
+          row.names = F)
 
 ```
 
 ## 3.1. Behavioural Results
+Table 1 summarises the behavioural data of the C-MAT task used here in both the pain and no pain conditions. Below is the analysis broken down by target modality, cue type, and distractor presence. 
+
 ```{r Table 1, echo=FALSE}
 ## Create formatted summary table of Behavioural results to support plots and analysis
 VOI <- c("Target","CueType","Distractor")
@@ -588,7 +676,8 @@ Error_means <- list()
 for (i in VOI){
 # Correct RT
 RT_means[["Correct"]][[i]] <- Trialdata %>%
-    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::filter(Accuracy == "Correct",
+                  Rec_pain == 1) %>%
     dplyr::group_by(PartID, get(i), Condition) %>%
     dplyr::summarise(subjRT = mean(RT, na.rm = T)) %>%
     dplyr::group_by(`get(i)`, Condition) %>% 
@@ -599,7 +688,8 @@ names(RT_means[["Correct"]][[i]]) <- c("Variable", "Condition","RT","SD")
 
 # Error RT
 RT_means[["Error"]][[i]] <- Trialdata %>%
-    dplyr::filter(Accuracy == "Error") %>%
+    dplyr::filter(Accuracy == "Error",
+                  Rec_pain == 1) %>%
     dplyr::group_by(PartID, get(i), Condition) %>%
     dplyr::summarise(subjRT = mean(RT, na.rm = T)) %>%
     dplyr::group_by(`get(i)`, Condition) %>% 
@@ -610,6 +700,7 @@ names(RT_means[["Error"]][[i]]) <- c("Variable", "Condition","Error RT","SD")
 
 # Error Rates
 Error_means[["Error"]][[i]] <- Trialdata %>% 
+  dplyr::filter(Rec_pain == 1) %>%
   dplyr::group_by(PartID, get(i), Accuracy, Condition) %>% 
   dplyr::tally() %>% 
   dplyr::group_by(PartID, `get(i)`, Condition) %>% 
@@ -624,17 +715,18 @@ Error_means[["Error"]][[i]] <- Trialdata %>%
 names(Error_means[["Error"]][[i]]) <- c("Variable", "Condition","Errors (%)","SD")
 
 # Miss Rates
-Error_means[["Miss"]][[i]] <- Trialdata %>% 
-  dplyr::group_by(PartID, get(i), Accuracy, Condition) %>% 
-  dplyr::tally() %>% 
-  dplyr::group_by(PartID, `get(i)`, Condition) %>% 
-  dplyr::mutate(total = sum(n)) %>% 
-  dplyr::mutate(perc = (n /total) * 100) %>% 
-  dplyr::select(-n, -total) %>% 
-  dplyr::filter(Accuracy =="Miss") %>% 
-  dplyr::group_by(`get(i)`,Condition) %>% 
-  dplyr::summarise(Errors = mean(perc, na.rm=T),
-                   SD = sd(perc,na.rm = T)) %>% 
+Error_means[["Miss"]][[i]] <- Trialdata %>%
+  dplyr::filter(Rec_pain == 1) %>%
+  dplyr::group_by(PartID, get(i), Accuracy, Condition) %>%
+  dplyr::tally() %>%
+  dplyr::group_by(PartID, `get(i)`, Condition) %>%
+  dplyr::mutate(total = sum(n)) %>%
+  dplyr::mutate(perc = (n / total) * 100) %>%
+  dplyr::select(-n,-total) %>%
+  dplyr::filter(Accuracy == "Miss") %>%
+  dplyr::group_by(`get(i)`, Condition) %>%
+  dplyr::summarise(Errors = mean(perc, na.rm = T),
+  SD = sd(perc, na.rm = T)) %>%
   dplyr::ungroup()
 names(Error_means[["Miss"]][[i]]) <- c("Variable", "Condition","Omissions (%)","SD")
 
@@ -644,68 +736,714 @@ names(Error_means[["Miss"]][[i]]) <- c("Variable", "Condition","Omissions (%)","
 # Format Table 1 - other option is to group RT, seperate to Errors/Omissions (table currently too big imo)
 Tab1_RT <- dplyr::bind_rows(RT_means$Correct,
                       .id = "Effect")
-Tab1_RT <- cbind(RT_means$Correct[RT_means$Correct])
+Tab1_RT$RT <- paste(round(Tab1_RT$RT,2)," (",round(Tab1_RT$SD,2),")",sep="")
+Tab1_RT$SD <- NULL
+Tab1_RT <- Tab1_RT %>% tidyr::spread(Condition,RT)
+
 Tab1_RTerr <- dplyr::bind_rows(RT_means$Error,
                       .id = "Effect")
+Tab1_RTerr$`Error RT` <- paste(round(Tab1_RTerr$`Error RT`,2)," (",round(Tab1_RTerr$SD,2),")",sep="")
+Tab1_RTerr$SD <- NULL
+Tab1_RTerr <- Tab1_RTerr %>% tidyr::spread(Condition,`Error RT`)
+
 Tab1_Err <- dplyr::bind_rows(Error_means$Error,
                       .id = "Effect")
+Tab1_Err$`Errors (%)` <- paste(round(Tab1_Err$`Errors (%)`,2)," (",round(Tab1_Err$SD,2),")",sep="")
+Tab1_Err$SD <- NULL
+Tab1_Err <- Tab1_Err %>% tidyr::spread(Condition,`Errors (%)`)
+
 Tab1_Miss <- dplyr::bind_rows(Error_means$Miss,
                       .id = "Effect")
+Tab1_Miss$`Omissions (%)` <- paste(round(Tab1_Miss$`Omissions (%)`,2)," (",round(Tab1_Miss$SD,2),")",sep="")
+Tab1_Miss$SD <- NULL
+Tab1_Miss <- Tab1_Miss %>% tidyr::spread(Condition,`Omissions (%)`)
 
-np_Tab1 <- cbind(Tab1_RT[Tab1_RT$Condition=="No Pain",],
-                 Tab1_RTerr[Tab1_RTerr$Condition=="No Pain",][c("Error RT", "SD")],
-                 Tab1_Err[Tab1_Err$Condition=="No Pain",][c("Errors (%)", "SD")],
-                 Tab1_Miss[Tab1_Miss$Condition=="No Pain",][c("Omissions (%)", "SD")]
-)
-np_Tab1$Condition <- NULL
-np_Tab1$Effect <- NULL
-                 
-p_Tab1 <- cbind(Tab1_RT[Tab1_RT$Condition=="Pain",],
-                 Tab1_RTerr[Tab1_RTerr$Condition=="Pain",][c("Error RT", "SD")],
-                 Tab1_Err[Tab1_Err$Condition=="Pain",][c("Errors (%)", "SD")],
-                 Tab1_Miss[Tab1_Miss$Condition=="Pain",][c("Omissions (%)", "SD")]
-)
-p_Tab1$Condition <- NULL
-p_Tab1$Effect <- NULL
 
-Table1 <- cbind(np_Tab1,p_Tab1)
-names(Table1) <-
-  c(
-  "",
-  "RT",
-  "SD",
-  "Error RT",
-  "SD",
-  "Errors (%)",
-  "SD",
-  "Omissions (%)",
-  "SD",
-  "Variable",
-  "RT",
-  "SD",
-  "Error RT",
-  "SD",
-  "Errors (%)",
-  "SD",
-  "Omissions (%)",
-  "SD"
-  )
-Table1$Variable <- NULL
+## Bring tables together into table, dropping the effect and variable columns
 
-# Paste the SD with the RT in brackets? - round to 2 digits
+Table1 <- cbind(Tab1_RT %>% select(-Effect),
+                Tab1_RTerr %>% select(-Effect,-Variable),
+                Tab1_Err %>% select(-Effect,-Variable),
+                Tab1_Miss %>% select(-Effect,-Variable))
 
+names(Table1)[names(Table1) == 'Variable'] <- ' '
 
 # Print Table 1
 # Column headers for Condition
 # Row Groupings for Modality, Cue Type, Distractor
-kable(Table1, caption = "Table 1. Behavoural Summary Stats",digits = 2) %>%
+kable(Table1, caption = "Table 1. Summary of the behavioural data for the no pain and pain conditions, split by the cue type, distractor presence, and target modality.") %>%
   kable_styling("striped", full_width = F) %>%
- add_header_above(c(" " = 1, "No Pain" = 8, "Pain" = 8)) %>% 
-  pack_rows("Modality", 1, 2) %>%
-  pack_rows("Cue Type", 3, 5) %>% 
-  pack_rows("Distractor",6, 7)
+ add_header_above(c(" ", "Correct RT (ms)" = 2, "Error RT (ms)" = 2, "Errors (%)" = 2, "Omissions (%)" = 2)) %>% 
+  pack_rows("Cue Type", 1, 2) %>%
+  pack_rows("Distractor", 3, 4) %>% 
+  pack_rows("Modality", 5, 6) %>%
+column_spec(1, bold = T, border_right = T) %>% 
+  footnote(general = "Data are presented as the mean (standard deviation)."
+)
+
+write.csv(Table1,
+          file = "Output/Table1.csv",
+          row.names = T)
 
 ```
+
+```{r ANOVA}
+## Run ANOVAs on each effect; Preparation, Distraction, Modality
+
+## Correct RT
+# Test interaction effects.
+ANOVAtest <- list()
+
+## Full model
+ANOVAtest[["Full"]] <- BayesFactor::lmBF(
+    formula = RT ~ Target * CueType * Distractor * Condition + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+ANOVAtest[["MainEff"]] <- BayesFactor::lmBF(
+    formula = RT ~ Target + CueType + Distractor + Condition + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+# Support for just the main effects compared to the interactions
+ANOVAtest[["MainEff"]]/ANOVAtest[["MainEff"]]
+
+## Now build models for each main effect to compare against 
+ANOVAtest[["Null"]] <- BayesFactor::lmBF(
+    formula = RT ~ 1 + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+ANOVAtest[["Condition"]] <- BayesFactor::lmBF(
+    formula = RT ~ Condition + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+ANOVAtest[["Target"]] <- BayesFactor::lmBF(
+    formula = RT ~ Target + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+ANOVAtest[["CueType"]] <- BayesFactor::lmBF(
+    formula = RT ~ CueType + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+ANOVAtest[["Distractor"]] <- BayesFactor::lmBF(
+    formula = RT ~ Distractor + PartID,
+    data = Trialdata %>%
+      dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+      dplyr::group_by(PartID, Target, CueType, Distractor, Condition) %>%
+      dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID"
+  )
+
+
+incmods <- bayestestR::bayesfactor_models(
+  ANOVAtest[["Condition"]],ANOVAtest[["Target"]],ANOVAtest[["CueType"]],ANOVAtest[["Distractor"]],ANOVAtest$MainEff,ANOVAtest$Full,
+  denominator =  ANOVAtest[["Null"]])
+
+bayestestR::bayesfactor_inclusion(
+  incmods,
+  match_models = F
+)
+
+
+
+
+
+
+
+
+
+InteractionTests[["Full"]][["Inclusion"]] <- bayestestR::bayesfactor_inclusion(
+  InteractionTests[["Full"]][["ANOVA"]],
+  match_models = T
+)
+
+## Error Test
+full <- BayesFactor::anovaBF(
+  formula = perc ~ Target * CueType * Distractor * Condition + PartID,
+  data = Trialdata %>%
+    dplyr::group_by(PartID, Condition, CueType, Target, Distractor, Accuracy) %>%
+    dplyr::tally() %>%
+    dplyr::group_by(PartID, Condition, CueType, Target, Distractor) %>%
+    dplyr::mutate(total = sum(n)) %>%
+    dplyr::mutate(perc = (n / total) * 100) %>%
+    dplyr::select(-n,-total) %>%
+    dplyr::filter(Accuracy == "Error") %>%
+    dplyr::select(-Accuracy),
+  whichRandom = "PartID",
+  iterations = 1000
+)
+
+bayestestR::bayesfactor_inclusion(
+full,  match_models = F
+)
+
+full <- BayesFactor::anovaBF(
+  formula = perc ~ Target * CueType * Distractor * Condition + PartID,
+  data = Trialdata %>%
+    dplyr::group_by(PartID, Condition, CueType, Target, Distractor, Accuracy) %>%
+    dplyr::tally() %>%
+    dplyr::group_by(PartID, Condition, CueType, Target, Distractor) %>%
+    dplyr::mutate(total = sum(n)) %>%
+    dplyr::mutate(perc = (n / total) * 100) %>%
+    dplyr::select(-n,-total) %>%
+    dplyr::filter(Accuracy == "Miss") %>%
+    dplyr::select(-Accuracy),
+  whichRandom = "PartID",
+  iterations = 1000
+)
+
+bayestestR::bayesfactor_inclusion(
+full,  match_models = F
+)
+
+
+
+
+# papaja::apa_print.BFBayesFactor(InteractionTests[["Full"]][["ANOVA"]])
+
+## Follow-up Bayes t-tests
+BayesT <- list(Modality = list(),
+  Preparation = list(),
+  Distractor = list(),
+  Condition = list()
+)
+
+BayesT[["Preparation"]] <- 
+    BayesFactor::ttestBF(
+      x = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                      Rec_pain == 1) %>%
+        dplyr::group_by(PartID, CueType) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(CueType, RT) %>% .$Ambiguous,
+      y = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, CueType) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(CueType, RT) %>% .$Cued,
+      paired = T)
+
+BayesT[["Modality"]] <-
+    BayesFactor::ttestBF(
+      x = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Target) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Target, RT) %>% .$Visual,
+      y = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Target) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Target, RT) %>% .$Auditory,
+      paired = T)
+
+BayesT[["Distractor"]] <-
+    BayesFactor::ttestBF(
+      x = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Distractor) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Distractor, RT) %>% .$Absent,
+      y = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Distractor) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Distractor, RT) %>% .$Present,
+      paired = T)
+
+BayesT[["Condition"]] <-
+    BayesFactor::ttestBF(
+      x = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Condition) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Condition, RT) %>% .$`No Pain`,
+      y = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Condition) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Condition, RT) %>% .$Pain,
+      paired = T)
+
+## Post-hoc t-test to confirm effect of pain
+BayesT[["Modality"]][["Pain"]] <-
+  sapply(c("Visual", "Auditory"), function(i)
+    BayesFactor::ttestBF(
+      x = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                      Target == i,
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Condition) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Condition, RT) %>% .$`No Pain`,
+      y = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                      Target == i,
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Condition) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Condition, RT) %>% .$Pain,
+      paired = T
+    ), USE.NAMES = T)
+
+BayesT[["Distractor"]] <-
+  sapply(c("No Pain", "Pain"), function(i)
+    BayesFactor::ttestBF(
+      x = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                      Condition == i,
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Distractor) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Distractor, RT) %>% .$Absent,
+      y = Trialdata %>%
+        dplyr::filter(Accuracy == "Correct",
+                      Condition == i,
+                    Rec_pain == 1) %>%
+        dplyr::group_by(PartID, Distractor) %>%
+        dplyr::summarise(RT = mean(RT, na.rm = T)) %>%
+        tidyr::spread(Distractor, RT) %>% .$Present,
+      paired = T
+    ), USE.NAMES = T)
+
+
+
+
+```
+
+  In the full ANOVA model there was evidence to support each main effect, seperately. 
+  
+
+```{r Plotting Results}
+## Preparation Effect
+Plotdata <- list()
+
+Plotdata[["PreparationCOND"]] <- Trialdata %>%
+  dplyr::filter(Accuracy == "Correct",
+                Rec_pain == 0) %>% # This is necessary across all RT data - Hard coded!
+  dplyr::group_by(PartID, CueType, Condition) %>%
+  dplyr::summarise(RT = mean(RT, na.rm = T))
+
+Plotdata[["DistractionCOND"]] <- Trialdata %>%
+  dplyr::filter(Accuracy == "Correct",
+                Rec_pain == 0,
+                CueType == "Cued",
+                Target == "Visual") %>% 
+  dplyr::group_by(PartID, Distractor, Condition) %>%
+  dplyr::summarise(RT = mean(RT, na.rm = T))
+
+
+wse <- list()
+wse[["PreparationCOND"]] <- Rmisc::summarySEwithin(
+  Plotdata[["PreparationCOND"]],
+  measurevar = "RT",
+  withinvars = c("CueType","Condition"),
+  idvar = "PartID",
+  na.rm = T,
+  conf.interval = .95
+)
+
+wse[["DistractionCOND"]] <- Rmisc::summarySEwithin(
+  Plotdata[["DistractionCOND"]],
+  measurevar = "RT",
+  withinvars = c("Distractor","Condition"),
+  idvar = "PartID",
+  na.rm = T,
+  conf.interval = .95
+)
+
+w = 16
+h = 4
+
+
+# ## Make and save plot
+# ggplot(Plotdata[["PreparationCOND"]], aes(x = CueType, y = RT, fill = Condition)) +
+#       geom_boxplot(
+#       aes(x = CueType, y = RT, fill = Condition),
+#       outlier.shape = NA,
+#       alpha = .5,
+#       width = .1,
+#       colour = "black"
+#     ) +
+#     geom_point(
+#       aes(
+#         x = as.numeric(CueType) -.15,
+#         y = RT,
+#         colour = Condition
+#       ),
+#       position = position_jitter(width = .05),
+#       size = 1.5,
+#       shape = 20
+#     ) +
+#     geom_point(
+#       data = wse[["PreparationCOND"]],
+#       aes(
+#         x = as.numeric(CueType) -.15,
+#         y = RT,
+#         group = Condition,
+#         colour = Condition
+#       ),
+#       shape = 18,
+#       size = 3
+#     ) +
+#   geom_line(data = wse[["PreparationCOND"]],
+#       aes(x = as.numeric(CueType) -.15,
+#         y = RT,
+#         group = Condition,
+#         colour = Condition))+
+#     geom_errorbar(
+#       data = wse[["PreparationCOND"]],
+#       aes(
+#         x = as.numeric(CueType) -.15,
+#         y = RT,
+#         group = Condition,
+#         colour = Condition,
+#         ymin = RT - se,
+#         ymax = RT + se
+#       ),
+#       width = .05
+#     ) +
+#     scale_colour_manual(values = wes_palette("GrandBudapest1")) + # Change to colour blind friendly for publication
+#     scale_fill_manual(values = wes_palette("GrandBudapest1")) +
+#     theme_classic() +
+#     theme(legend.position = c(.9, .2)) +
+#     ggsave(
+#       paste("Output/Plots/PreparationCOND.tiff", sep = ""),
+#       width = w,
+#       height = h)
+
+ggplot(Plotdata[["DistractionCOND"]], aes(x = Distractor, y = RT, fill = Condition)) +
+  geom_boxplot(
+    aes(x = Distractor, y = RT, fill = Condition),
+    outlier.shape = NA,
+    alpha = .5,
+    width = .1,
+    colour = "black"
+  ) +
+  geom_point(
+    aes(
+      x = as.numeric(Distractor) - .15,
+      y = RT,
+      colour = Condition
+    ),
+    position = position_jitter(width = .05),
+    size = 1.5,
+    shape = 20
+  ) +
+  geom_point(
+    data = wse[["DistractionCOND"]],
+    aes(
+      x = as.numeric(Distractor) - .15,
+      y = RT,
+      group = Condition,
+      colour = Condition
+    ),
+    shape = 18,
+    size = 3
+  ) +
+  geom_line(data = wse[["DistractionCOND"]],
+            aes(
+              x = as.numeric(Distractor) - .15,
+              y = RT,
+              group = Condition,
+              colour = Condition
+            )) +
+  geom_errorbar(
+    data = wse[["DistractionCOND"]],
+    aes(
+      x = as.numeric(Distractor) - .15,
+      y = RT,
+      group = Condition,
+      colour = Condition,
+      ymin = RT - se,
+      ymax = RT + se
+    ),
+    width = .05
+  ) +
+  scale_colour_manual(values = wes_palette("GrandBudapest1")) + # Change to colour blind friendly for publication
+  scale_fill_manual(values = wes_palette("GrandBudapest1")) +
+  theme_classic() +
+  theme(legend.position = c(.9, .2)) +
+  ggsave("Output/Plots/DistractionCOND.png")
+
+
+
+```
+
+
+
+
+```{r ANOVA - Cue Type}
+
+BayesT <- list()
+
+BayesT[["CueTypeCondition"]] <- Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)) %>% 
+    tidyr::unite(Effect,Condition,CueType) %>% 
+    tidyr::spread(Effect,RT)
+
+write.csv(BayesT$CueTypeCondition,
+          file = "Output/CueTypeCond.csv")
+
+BayesT[["TargetCondition"]] <- Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, Target, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)) %>% 
+    tidyr::unite(Effect,Condition,Target) %>% 
+    tidyr::spread(Effect,RT)
+
+write.csv(BayesT$TargetCondition,
+          file = "Output/TargetCond.csv")
+
+BayesT[["DistractorCondition"]] <- Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)) %>% 
+    tidyr::unite(Effect,Condition,Distractor) %>% 
+    tidyr::spread(Effect,RT)
+
+write.csv(BayesT$DistractorCondition,
+          file = "Output/DistractorCond.csv")
+
+ProgramData <- dplyr::bind_cols(BayesT)
+
+# No pain Preparation (CueType) Effect
+ProgramData$np_PreparationEff <- ProgramData$`No Pain_Ambiguous`- ProgramData$`No Pain_Cued`
+
+# No pain Target Effect
+ProgramData$np_TargetEff <- ProgramData$`No Pain_Auditory`- ProgramData$`No Pain_Visual`
+
+# No pain Distraction Effect
+ProgramData$np_DistractionEff <- ProgramData$`No Pain_Present`- ProgramData$`No Pain_Absent`
+
+# Pain Preparation (CueType) Effect
+ProgramData$p_PreparationEff <- ProgramData$Pain_Ambiguous- ProgramData$Pain_Cued
+
+# Pain Target Effect
+ProgramData$p_TargetEff <- ProgramData$Pain_Auditory- ProgramData$Pain_Visual
+
+# Pain Distraction Effect
+ProgramData$p_DistractionEff <- ProgramData$Pain_Present- ProgramData$Pain_Absent
+
+write.csv(ProgramData,
+          file = "Output/TtestData.csv")
+
+
+
+
+BayesModels <- list()
+
+
+
+
+
+# BayesModels[["Null"]] <-
+#   BayesFactor::lmBF(
+#     RT ~ PartID,
+#     data = Trialdata %>%
+#     dplyr::filter(Accuracy == "Correct") %>%
+#     dplyr::group_by(PartID) %>%
+#     dplyr::summarise(RT = mean(RT, na.rm = T)),
+#     whichRandom = "PartID",
+#     progress = F,
+#     iterations = 10000,posterior = F)
+
+## Cue Type
+BayesModels[["CueType"]] <-
+  BayesFactor::lmBF(
+    RT ~ CueType  + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+BayesModels[["CueTypeCondition"]] <-
+  BayesFactor::lmBF(
+    RT ~ CueType + Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+BayesModels[["CueTypeConditionInt"]] <-
+  BayesFactor::lmBF(
+    RT ~ CueType * Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+## Target
+BayesModels[["Target"]] <-
+  BayesFactor::lmBF(
+    RT ~ Target  + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+BayesModels[["TargetCondition"]] <-
+  BayesFactor::lmBF(
+    RT ~ Target + Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+BayesModels[["TargetConditionInt"]] <-
+  BayesFactor::lmBF(
+    RT ~ Target * Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+## Distractor
+BayesModels[["Distractor"]] <-
+  BayesFactor::lmBF(
+    RT ~ Distractor  + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+BayesModels[["DistractorCondition"]] <-
+  BayesFactor::lmBF(
+    RT ~ Distractor + Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+BayesModels[["DistractorConditionInt"]] <-
+  BayesFactor::lmBF(
+    RT ~ Distractor * Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+## Condition
+BayesModels[["Condition"]] <-
+  BayesFactor::lmBF(
+    RT ~ Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+## Full Main Effects
+BayesModels[["Full"]] <-
+  BayesFactor::lmBF(
+    RT ~ CueType + Target + Distractor + Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+## Full Interactions
+BayesModels[["FullInt"]] <-
+  BayesFactor::lmBF(
+    RT ~ CueType * Target * Distractor * Condition + PartID,
+    data = Trialdata %>%
+    dplyr::filter(Accuracy == "Correct") %>%
+    dplyr::group_by(PartID, CueType, Target, Distractor, Condition) %>%
+    dplyr::summarise(RT = mean(RT, na.rm = T)),
+    whichRandom = "PartID",
+    progress = F,
+    iterations = 10000,posterior = F)
+
+# Compare models - Build them up some simple effects, to combined, to interaction
+mods <- bayestestR::bayesfactor_models(BayesModels$CueType,
+                                       BayesModels$Condition,
+                                       BayesModels$Target,
+                                       BayesModels$Distractor)
+# BF inclusion
+bayestestR::bayesfactor_inclusion(mods,match_models = T)
+```
+
+The effect of preparation on correct RT was assessed with a Bayesian two-way ANOVA of Cue Type (Ambiguous vs Cued) and Condition (No Pain vs Pain). Results suggested that there was evidence in favour of the effect of cueing ($BF$~10~ $=$ `r extractBF(BayesModels[["CueType"]],onlybf = T,logbf = F)`).  
+
+
+Visual cues provided the fastest responses, faster than both Auditory ($BF$~10~ $=$ `r extractBF(Bayesposthoc[["VisAud"]],onlybf = T,logbf = F)`) and Ambiguous ($BF$~10~ $=$ `r extractBF(Bayesposthoc[["VisAmb"]],onlybf = T,logbf = F)`). Interestingly, Ambiguous cues were also found to be faster than 
+followed by Ambiguous cues, and finally Auditory cues. This order was consistient across pain conditions, where RT remained relatively equal. 
+
 
 ### 3.1.1. Modality Effects
 Visual targets (`r round(mean(T1mean$Modality$RT[T1mean$Modality$Target=="Visual"]),2)` ± `r round(stderr(T1mean$Modality$RT[T1mean$Modality$Target=="Visual"]),2)`) were identified faster than auditory targets (`r round(mean(T1mean$Modality$RT[T1mean$Modality$Target=="Auditory"]),2)` ± `r round(stderr(T1mean$Modality$RT[T1mean$Modality$Target=="Auditory"]),2)`). The percentage of errer trials was higher for auditory targets compared to visual targets. Visual targets were incorrectly responded to on `r round(mean(T1err$Modality$ErrorRates[T1err$Modality$Target=="Visual"]),2)` ± `r round(stderr(T1err$Modality$ErrorRates[T1err$Modality$Target=="Visual"]),2)`% trials, while auditory targets had an error rate of `r round(mean(T1err$Modality$ErrorRates[T1err$Modality$Target=="Auditory"]),2)` ± `r round(stderr(T1err$Modality$ErrorRates[T1err$Modality$Target=="Auditory"]),2)`%. Given the low error rates, RTs to error trials were not examined here (but see Figure 1). Omissions across each target type was low (Visual = `r round(mean(T1omm$Modality$MissRates[T1err$Modality$Target=="Visual"],na.rm=T),2)`%, Auditory = `r round(mean(T1omm$Modality$MissRates[T1err$Modality$Target=="Visual"],na.rm=T),2)`%).

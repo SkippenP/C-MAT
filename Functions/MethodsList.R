@@ -120,6 +120,7 @@ MethodsList <- function(data) {
       minITI = min(ITI,na.rm = T),
       maxITI = max(ITI,na.rm =T)
     )
+  
   # Rates of each trial type
   # Create dummy variable of total N_trials per condtion, per participant
   Summdata$Total_Trials <- NA # Create variable
